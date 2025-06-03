@@ -21,7 +21,7 @@ UNITY_GAME_APP_PATH = "/Users/christabellapalumbi/Documents/GoogleHackathon/Buil
 UNITY_PROJECT_PATH = "/Users/christabellapalumbi/Documents/GoogleHackathon/BuildLLM" # Your Unity project's root folder
 # Path to your Unity Editor executable (adjust based on your Unity Hub installation)
 # Example for Unity 2023.1.20f1, find yours via Unity Hub -> Installs -> "..." menu -> Show in Finder
-UNITY_EDITOR_PATH = "/Users/christabellapalumbi/Desktop/Unity Editors/6000.0.50f1/Unity"
+UNITY_EDITOR_PATH = "/Users/christabellapalumbi/Desktop/Unity Editors/6000.0.50f1/Unity.app/Contents/MacOS/Unity"
 
 # Define the model if it's not defined elsewhere in your quickstart context
 MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash"
@@ -97,7 +97,7 @@ def trigger_unity_build() -> dict:
         "-projectPath", UNITY_PROJECT_PATH,
         "-executeMethod", "BuildScript.PerformBuild", # Make sure this method exists in your Unity project
         "-logFile", os.path.join(UNITY_PROJECT_PATH, "unity_build_log.txt"), # Log output to a file
-        "-buildTarget", "StandaloneOSX" # Or "StandaloneWindows64", "WebGL", etc.
+        "-buildOSXPlayer", os.path.join(UNITY_PROJECT_PATH, "Builds", "MyMacGame.app") 
     ]
 
     try:
@@ -113,10 +113,11 @@ def trigger_unity_build() -> dict:
                 "build_log_summary": result.stdout[:500] + "..." if len(result.stdout) > 500 else result.stdout # Summarize log
             }
         else:
+            print(f"\n--- DEBUG: Full Unity Build Error Output (stderr) ---\n{result.stderr}\n--- END DEBUG ---\n") # ADD THIS LINE FOR FULL STDERR
             return {
                 "status": "error",
-                "error_message": f"Unity build failed. Return code: {result.returncode}. Error output: {result.stderr[:500]}...",
-                "full_error_log": result.stderr
+                "error_message": f"Unity build failed. Return code: {result.returncode}. Please check the full error log above or in 'unity_build_log.txt'.",
+                "full_error_log": result.stderr # Still include in return for agent processing
             }
     except FileNotFoundError:
         return {
