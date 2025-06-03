@@ -37,7 +37,7 @@ def run_unity_game(scene_name: str) -> dict:
     Returns:
         dict: status and result or error message.
     """
-    mac_os_executable = os.path.join(UNITY_GAME_APP_PATH, "Contents", "MacOS", os.path.basename(UNITY_GAME_APP_PATH).replace(".app", ""))
+    mac_os_executable = os.path.join(UNITY_GAME_APP_PATH, "Contents", "MacOS", "BuildLLM")
 
     if not os.path.exists(mac_os_executable):
         return {
