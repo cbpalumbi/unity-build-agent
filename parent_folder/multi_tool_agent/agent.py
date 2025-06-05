@@ -154,10 +154,10 @@ class UnityAutomationOrchestrator(Agent):
         model: str,
         description: str,
         instruction: str,
-        tools: list,
         sub_agents: list,
         before_model_callback: Any,
-        **kwargs # Accept any other kwargs that Pydantic might inject or we want to pass
+        tools: Optional[list] = None,
+        **kwargs, # Accept any other kwargs that Pydantic might inject or we want to pass
     ):
         """
         Initializes the UnityAutomationOrchestrator.
@@ -168,6 +168,29 @@ class UnityAutomationOrchestrator(Agent):
         initial_build_status_queue = queue.Queue()
         initial_stop_event = threading.Event()
         initial_current_build_statuses = {}
+
+        if tools is None: tools = []
+
+        # We need to capture 'self' in the lambda's closure
+        # The LLM framework will see this as a function that takes 'build_id'
+        # The actual 'self' for get_build_status will be provided by the closure.
+        def get_build_status_tool(build_id: Optional[str] = None) -> dict:
+            """
+            Retrieves the status of a specific build by ID, or all known build statuses if no ID is provided.
+            Args:
+                build_id (str): The unique ID of the build to check. If None, returns all known statuses.
+            Returns:
+                dict: A dictionary containing the status of the requested build(s).
+            """
+            return self.get_build_status(build_id=build_id)
+        
+        # Append this *callable* to the tools list
+        # If your ADK expects a list of tool *functions*, then pass this directly.
+        # If it expects a specific Tool object, you'd instantiate that.
+        # Assuming `tools` passed to __init__ is where you register them:
+        if tools is None:
+            tools = []
+        tools.append(get_build_status_tool) # Add the wrapped function here
 
         # Pass all arguments, including your custom internal state, to the base Agent constructor.
         # Pydantic will handle the assignment to the declared fields.
@@ -195,13 +218,13 @@ class UnityAutomationOrchestrator(Agent):
         # Now that Pydantic has initialized the fields, you can access them.
         # Launch background services AFTER the agent instance is fully initialized
         # and its Pydantic fields are set.
-        #self.start_external_listener_subprocess()
+        self.start_external_listener_subprocess()
         print(f"UnityAutomationOrchestrator initialized with name: {self.name}")
 
 
     # Define a tool for the orchestrator's LLM to query build statuses.
     # The @tool decorator makes this method callable by the LLM. 
-    def get_build_status(self, build_id: str = None) -> dict:
+    def get_build_status(self, build_id: Optional[str] = None) -> dict:
         """
         Retrieves the status of a specific build by ID, or all known build statuses if no ID is provided.
         Args:
@@ -226,17 +249,114 @@ class UnityAutomationOrchestrator(Agent):
         
         return {"all_build_statuses": self.current_build_statuses}
 
-    # Placeholder for other methods (start_external_listener_subprocess, _read_listener_stdout,
-    # _process_build_notifications, _handle_build_notification, send_message_to_user, shutdown,
-    # and _before_agent_callback) that will be added in subsequent steps.
-    # For now, these are just defined to avoid errors:
-    def start_external_listener_subprocess(self): pass
-    def _read_listener_stdout(self): pass
+    def start_external_listener_subprocess(self):
+        """
+        Launches listener.py as a separate, long-running process and starts
+        a thread to continuously read its stdout.
+        """
+        listener_script_path = os.path.join(os.path.dirname(__file__), 'listener.py')
+        
+        try:
+            # Open stderr to a file for debugging, or you can use subprocess.PIPE
+            # if you want to read stderr in another thread/way.
+            self.listener_stderr_file_handle = open("listener_stderr.log", "a")
+            
+            self.listener_process = subprocess.Popen(
+                ["python", listener_script_path],
+                stdout=subprocess.PIPE,
+                stderr=self.listener_stderr_file_handle,
+                text=True, # Decode stdout/stderr as text
+                bufsize=1, # Line-buffered output for stdout
+            )
+            print(f"Launched listener.py process with PID: {self.listener_process.pid}")
+
+            # Start a thread to read stdout from the listener process
+            self.stdout_reader_thread = threading.Thread(target=self._read_listener_stdout, daemon=True)
+            self.stdout_reader_thread.start()
+            print("Started stdout reader thread for listener process.")
+
+        except FileNotFoundError:
+            print(f"Error: Python interpreter or listener.py not found at {listener_script_path}.")
+            if self.listener_stderr_file_handle:
+                self.listener_stderr_file_handle.close()
+            self.listener_stderr_file_handle = None
+        except Exception as e:
+            print(f"An error occurred while launching listener.py: {e}")
+            if self.listener_stderr_file_handle:
+                self.listener_stderr_file_handle.close()
+            self.listener_stderr_file_handle = None
+    def _read_listener_stdout(self):
+        """
+        Continuously reads lines from the listener.py's stdout, parses them as JSON,
+        and places them into self.build_status_queue. This runs in a separate thread.
+        """
+        if not self.listener_process or not self.listener_process.stdout:
+            print("Listener process or its stdout not initialized. Cannot read stdout.")
+            return
+
+        print("Stdout reader thread started, waiting for output from listener.py...")
+        while not self._stop_event.is_set():
+            try:
+                line = self.listener_process.stdout.readline()
+                if line:
+                    line = line.strip()
+                    if line: # Ensure the line is not empty after stripping
+                        print(f"[Listener STDOUT]: {line}") # For debugging
+                        try:
+                            notification = json.loads(line)
+                            self.build_status_queue.put(notification)
+                            print(f"Put notification into queue: {notification}")
+                        except json.JSONDecodeError as e:
+                            print(f"Failed to decode JSON from listener stdout: {line} - Error: {e}")
+                else:
+                    # If readline returns an empty string, the subprocess has likely exited.
+                    if self.listener_process.poll() is not None:
+                        print("Listener process has exited. Stopping stdout reader thread.")
+                        break
+                    # Small delay to prevent busy-waiting if no output
+                    self._stop_event.wait(0.1) 
+            except Exception as e:
+                print(f"Error reading from listener stdout: {e}")
+                break # Exit the thread on error
+
+        print("Stdout reader thread stopping.")
+
     def _process_build_notifications(self): pass
-    def _handle_build_notification(self, notification): pass
+    def _handle_build_notification_from_listener(self, notification): pass
     def send_message_to_user(self, message): print(f"\n[ADK Agent Proactive Notification]: {message}\n")
-    def shutdown(self): pass
-    def _before_agent_callback(self, context: CallbackContext): pass
+    def shutdown(self):
+        """
+        Gracefully shuts down the listener subprocess and reader thread.
+        """
+        print("Initiating UnityAutomationOrchestrator shutdown...")
+        # Signal the stdout reader thread to stop
+        self._stop_event.set()
+
+        # Terminate the listener process if it's running
+        if self.listener_process and self.listener_process.poll() is None:
+            print("Terminating listener.py process...")
+            self.listener_process.terminate()
+            try:
+                self.listener_process.wait(timeout=5) # Wait for process to terminate
+            except subprocess.TimeoutExpired:
+                print("Listener process did not terminate gracefully, killing it.")
+                self.listener_process.kill()
+        
+        # Join the stdout reader thread to ensure it finishes
+        if self.stdout_reader_thread and self.stdout_reader_thread.is_alive():
+            print("Joining stdout reader thread...")
+            self.stdout_reader_thread.join(timeout=5)
+            if self.stdout_reader_thread.is_alive():
+                print("Warning: stdout reader thread did not terminate in time.")
+
+        # Close the stderr file handle
+        if self.listener_stderr_file_handle:
+            self.listener_stderr_file_handle.close()
+            self.listener_stderr_file_handle = None
+            print("Closed listener_stderr.log file handle.")
+
+        print("UnityAutomationOrchestrator shutdown complete.")
+    def _before_agent_callback(self, **kwargs): pass
 
 
 # Build Orchestration Agent
@@ -278,9 +398,9 @@ if build_orchestration_agent:
                 "1. 'BuildOrchestrationAgent': Handles triggering remote Unity builds via Pub/Sub.\n\n"
                 "Delegate clearly and precisely to the 'BuildOrchestrationAgent' if the request is about building the game. "
                 "If a request doesn't fall into this category, state that you cannot handle it. "
-                "You can also use your 'get_build_status' tool to provide information about past or current build statuses when asked."
+                "You can also use your 'get_build_status_tool' tool to provide information about past or current build statuses when asked."
             ),
-            tools=[UnityAutomationOrchestrator.get_build_status], # Add the tool here
+            tools=[], # Add the tool here
             sub_agents=[build_orchestration_agent], # Pass your sub-agent instance here
             before_model_callback=UnityAutomationOrchestrator._before_agent_callback
         )
