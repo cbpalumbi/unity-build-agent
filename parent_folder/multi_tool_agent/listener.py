@@ -4,6 +4,7 @@ import asyncio
 import json
 import base64
 import os
+import sys # Import sys to explicitly write to stdout and stderr
 from google.cloud import pubsub_v1
 
 # --- Configuration Variables ---
@@ -17,45 +18,97 @@ APP_NAME = "unity_build_orchestrator" # Used for consistent subscription naming,
 async def listen_for_build_completions_simple(subscription_path: str):
     """
     Listens for messages on the build completion Pub/Sub subscription
-    and simply prints them.
+    and outputs them as JSON to stdout. All debug/log messages go to stderr.
     """
     if not GOOGLE_CLOUD_PROJECT_ID or GOOGLE_CLOUD_PROJECT_ID == "your-gcp-project-id":
-        print("ERROR: GOOGLE_CLOUD_PROJECT_ID is not set. Please set it as an environment variable or hardcode.")
+        sys.stderr.write("ERROR: GOOGLE_CLOUD_PROJECT_ID is not set. Please set it as an environment variable or hardcode.\n")
+        sys.stderr.flush()
         return
 
     subscriber = pubsub_v1.SubscriberClient()
 
-    print(f"\n--- Starting simple Pub/Sub listener on: {subscription_path} ---")
+    sys.stderr.write(f"--- Starting simple Pub/Sub listener on: {subscription_path} ---\n")
+    sys.stderr.flush() # Ensure this is written immediately
 
     def callback(message: pubsub_v1.subscriber.message.Message):
-        print(f"--- Pub/Sub Listener: Received message ID: {message.message_id} ---")
+        # All logging/debugging for message reception and processing goes to stderr
+        sys.stderr.write(f"--- Pub/Sub Listener: Received message ID: {message.message_id} ---\n")
+        sys.stderr.flush()
+
+        notification_payload = {}
         try:
             # Decode the message data (payload)
             message_data_raw = message.data.decode('utf-8')
-            print(f"--- Pub/Sub Listener: Raw message payload: {message_data_raw} ---")
 
-            # Also print attributes, which contain build_id and session_id
-            print(f"--- Pub/Sub Listener: Message attributes: {message.attributes} ---")
+            # IF this is the actual data you want the parent to process as JSON:
+            try:
+                sys.stderr.write("hello in try")
+                sys.stderr.flush()
+                notification_payload = json.loads(message_data_raw)
+                sys.stderr.write("hello in try next")
+                sys.stderr.flush()
+                # Convert back to JSON string to ensure it's on one line for readline()
+                # Or, if you want the raw string, just print message_data_raw
+                sys.stdout.write(json.dumps(notification_payload) + '\n') # Send JSON to stdout
+                sys.stdout.flush() # Important for line-buffering to work consistently
+
+            except json.JSONDecodeError:
+                # If it's not JSON, perhaps you still want to send the raw string to stdout
+                # Or handle this case by sending a specific error message/format
+                sys.stdout.write(message_data_raw + '\n') # Or a different format for non-JSON
+                sys.stdout.flush()
+                # You can still use sys.stderr for internal debugging/warning messages:
+                sys.stderr.write(f"--- Pub/Sub Listener Warning: Message data is not valid JSON. Treating as raw string. ---\n")
+                sys.stderr.flush()
+
+
+
+
+            sys.stderr.write(f"--- Pub/Sub Listener: Raw message payload: {message_data_raw} ---\n")
+            sys.stderr.flush() # problem? 
+            sys.stderr.write("above")
+            sys.stderr.flush()
+            
+
+            # # Add attributes to the payload. Attributes are often crucial for metadata.
+            # # Convert Protobuf Map to a regular dictionary for JSON serialization
+            # notification_payload["attributes"] = dict(message.attributes)
+
+            # # Add message_id for traceability
+            # notification_payload["message_id"] = message.message_id
+            # sys.stderr.write("below")
+            # # Output the complete notification payload as a single JSON line to stdout
+            # json_output = json.dumps(notification_payload)
+            # print(json_output)
+            # sys.stdout.write(json_output + "\n")
+            # sys.stdout.flush() # CRUCIAL: Flush stdout immediately so the parent process can read it
 
         except Exception as e:
-            print(f"--- Pub/Sub Listener Error processing message {message.message_id}: {e} ---")
+            sys.stderr.write(f"--- Pub/Sub Listener Error processing message {message.message_id}: {e} ---\n")
+            sys.stderr.flush()
         finally:
             # ALWAYS acknowledge the message to prevent it from being redelivered.
             message.ack()
-            print(f"--- Pub/Sub Listener: Acknowledged message {message.message_id}. ---")
+            sys.stderr.write(f"--- Pub/Sub Listener: Acknowledged message {message.message_id}. ---\n")
+            sys.stderr.flush()
 
     # Start the subscriber in a non-blocking way
     future = subscriber.subscribe(subscription_path, callback)
 
     try:
         # Keep the listener running indefinitely
-        await future.result() # This will block until the subscription is cancelled or an error occurs
+        # This will block until the subscription is cancelled or an error occurs
+        sys.stderr.write(f"--- Pub/Sub Listener: Listening for messages on {subscription_path}... ---\n")
+        sys.stderr.flush()
+        await future.result()
     except TimeoutError:
-        print("--- Pub/Sub Listener timed out. ---")
+        sys.stderr.write("--- Pub/Sub Listener timed out. ---\n")
+        sys.stderr.flush()
         future.cancel()
         await subscriber.close()
     except Exception as e:
-        print(f"--- Pub/Sub Listener experienced an error: {e} ---")
+        sys.stderr.write(f"--- Pub/Sub Listener experienced an error: {e} ---\n")
+        sys.stderr.flush()
         future.cancel()
         await subscriber.close()
 
@@ -70,14 +123,17 @@ async def main_listener():
     subscriber_client = pubsub_v1.SubscriberClient()
     try:
         subscriber_client.get_subscription(request={"subscription": completion_subscription_path})
-        print(f"Subscription '{completion_subscription_path}' already exists.")
+        sys.stderr.write(f"Subscription '{completion_subscription_path}' already exists.\n") # <-- CHANGED TO sys.stderr
+        sys.stderr.flush()
     except Exception as e:
-        print(f"Subscription '{completion_subscription_path}' not found, creating it on topic '{UNITY_BUILD_COMPLETION_TOPIC_ID}'...")
+        sys.stderr.write(f"Subscription '{completion_subscription_path}' not found, creating it on topic '{UNITY_BUILD_COMPLETION_TOPIC_ID}'...\n") # <-- CHANGED TO sys.stderr
+        sys.stderr.flush()
         topic_path_for_sub = subscriber_client.topic_path(GOOGLE_CLOUD_PROJECT_ID, UNITY_BUILD_COMPLETION_TOPIC_ID)
         subscriber_client.create_subscription(
             request={"name": completion_subscription_path, "topic": topic_path_for_sub}
         )
-        print(f"Subscription '{completion_subscription_path}' created.")
+        sys.stderr.write(f"Subscription '{completion_subscription_path}' created.\n") # <-- CHANGED TO sys.stderr
+        sys.stderr.flush()
     finally:
         subscriber_client.close()
 
