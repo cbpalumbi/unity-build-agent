@@ -31,6 +31,8 @@ def publish_build_request(message_payload: str) -> dict:
                                "start_build_for_unityadmin"
                                "checkout_and_build:main"
                                "checkout_and_build:abcdef1234567890abcdef1234567890"
+        nobuild (bool): If True, sends a 'nobuild' attribute with the message,
+                        indicating to the consumer that no actual build should occur.
 
     Returns:
         dict: Status and message or error details.
@@ -43,17 +45,26 @@ def publish_build_request(message_payload: str) -> dict:
     data_bytes = message_payload.encode('utf-8')
 
     build_id = str(uuid.uuid4())
+    nobuild = True # DEBUG SETTING HARDCODED !!! 
+
+    # Prepare attributes. All attribute values must be strings.
+    attributes = {
+        "build_id": build_id
+    }
+    if nobuild:
+        attributes["nobuild"] = "true" # Send "true" as a string
 
     try:
-        print(f"--- Tool: publish_build_request called with payload: '{message_payload}' ---")
-        future = publisher.publish(topic_path, data=data_bytes, build_id=build_id)
+        print(f"--- Tool: publish_build_request called with payload: '{message_payload}', nobuild={nobuild} ---")
+        future = publisher.publish(topic_path, data=data_bytes, **attributes) # Pass attributes using **
         message_id = future.result()
         print(f"SUCCESS: Published message with ID: {message_id}")
         return {
             "status": "success",
             "message": f"Build request published to Pub/Sub with ID: {message_id}",
             "message_payload": message_payload,
-            "build_id": build_id
+            "build_id": build_id,
+            "nobuild_flag_sent": nobuild # Indicate if the flag was sent
         }
     except Exception as e:
         print(f"ERROR: Failed to publish message to Pub/Sub: {e}")
@@ -61,6 +72,7 @@ def publish_build_request(message_payload: str) -> dict:
             "status": "error",
             "error_message": f"Failed to publish build request: {e}"
         }
+
 
 def receive_build_completion(build_id: str, gcs_path: str) -> dict:
     """
