@@ -1,0 +1,46 @@
+{
+  "eval_set_id": "unity_build_confirm_scenario",
+  "name": "Unity Build Confirmation Test",
+  "description": "Tests the agent's ability to prompt for confirmation after a build request, including an agent transfer.",
+  "eval_cases": [
+    {
+      "eval_id": "build_confirmation_flow_1",
+      "conversation": [
+        {
+          "user_content": {
+            "parts": [
+              {
+                "text": "Build the game with message start_build_for_unityadmin"
+              }
+            ],
+            "role": "user"
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {
+                "name": "transfer_to_agent",
+                "args": {
+                  "agent_name": "BuildOrchestrationAgent"
+                }
+              }
+            ],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Okay, I will build the game with the message `start_build_for_unityadmin`.\n\nBefore I proceed, please confirm that you want to initiate this build. It will take some time to complete.\n"
+              }
+            ],
+            "role": "model"
+          }
+        }
+      ],
+      "session_input": {
+        "app_name": "unity_automation_orchestrator",
+        "user_id": "test_user_build_confirm",
+        "state": {}
+      }
+    }
+  ]
+}

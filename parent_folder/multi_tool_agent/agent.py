@@ -375,12 +375,12 @@ build_orchestration_agent = Agent(
 print(f"✅ Agent '{build_orchestration_agent.name}' created.")
 
 # --- Root Unity Automation Orchestrator Agent ---
-root_agent = None
+agent = None
 # Ensure build_orchestration_agent was created successfully
 if build_orchestration_agent:
     try:
         # Instantiate your custom root agent class, passing all necessary arguments
-        root_agent = UnityAutomationOrchestrator(
+        agent = UnityAutomationOrchestrator(
             name="UnityAutomationOrchestrator",
             model=MODEL_GEMINI_2_0_FLASH,
             description=(
@@ -405,7 +405,7 @@ if build_orchestration_agent:
             tools=[], # Leave this empty because the stateful tools are added manually on init
             sub_agents=[build_orchestration_agent], # Pass your sub-agent instance here
         )
-        print(f"✅ Root Agent '{root_agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
+        print(f"✅ Root Agent '{agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
     # except KeyboardInterrupt:
     #     print("\nCtrl+C detected. Shutting down gracefully...")
     except Exception as e:
