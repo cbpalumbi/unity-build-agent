@@ -1,12 +1,10 @@
 import os
-import asyncio
 import json
 import uuid
 import subprocess # For launching listener.py
 import threading  # For the internal Pub/Sub listener thread
 import queue      # For passing messages from internal listener to main agent logic
-import time       # For short delays during startup/shutdown
-import sys
+import atexit
 
 from google.adk.agents import Agent
 from google.adk.runners import Runner, InMemorySessionService
@@ -170,6 +168,9 @@ class UnityAutomationOrchestrator(Agent):
 
         if tools is None: tools = []
 
+        # Register the shutdown method here when the orchestrator is created
+        atexit.register(self.shutdown)
+
         # We need to capture 'self' in the lambda's closure
         # The LLM framework will see this as a function that takes 'build_id'
         # The actual 'self' for get_build_status will be provided by the closure.
@@ -327,9 +328,6 @@ class UnityAutomationOrchestrator(Agent):
 
         print("Stdout reader thread stopping.")
 
-    def _process_build_notifications(self): pass
-    def _handle_build_notification_from_listener(self, notification): pass
-    def send_message_to_user(self, message): print(f"\n[ADK Agent Proactive Notification]: {message}\n")
     def shutdown(self):
         """
         Gracefully shuts down the listener subprocess and reader thread.
@@ -410,8 +408,13 @@ if build_orchestration_agent:
             sub_agents=[build_orchestration_agent], # Pass your sub-agent instance here
         )
         print(f"✅ Root Agent '{root_agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
+    # except KeyboardInterrupt:
+    #     print("\nCtrl+C detected. Shutting down gracefully...")
     except Exception as e:
         print(f"❌ Could not create Root Unity Agent. Error: {e}")
+    # finally:
+    #     root_agent.shutdown()
+    
 else:
     print("❌ Cannot create Root Unity Agent because the BuildOrchestrationAgent failed to initialize.")
 

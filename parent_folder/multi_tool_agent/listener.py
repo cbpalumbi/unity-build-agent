@@ -42,32 +42,31 @@ async def listen_for_build_completions_simple(subscription_path: str):
 
             # IF this is the actual data you want the parent to process as JSON:
             try:
-                sys.stderr.write("hello in try")
-                sys.stderr.flush()
                 notification_payload = json.loads(message_data_raw)
-                sys.stderr.write("hello in try next")
-                sys.stderr.flush()
                 # Convert back to JSON string to ensure it's on one line for readline()
                 # Or, if you want the raw string, just print message_data_raw
-                sys.stdout.write(json.dumps(notification_payload) + '\n') # Send JSON to stdout
-                sys.stdout.flush() # Important for line-buffering to work consistently
+                try:
+                    sys.stdout.write(json.dumps(notification_payload) + '\n') # Send JSON to stdout
+                    sys.stdout.flush() # Important for line-buffering to work consistently
+
+                    sys.stderr.write(f"--- Pub/Sub Listener Message: dumped json to stdout ---\n")
+                    sys.stderr.flush()
+                except BrokenPipeError:
+                    sys.stderr.write("--- Pub/Sub Listener Error: Parent process pipe broken. Listener exiting gracefully.")
 
             except json.JSONDecodeError:
                 # If it's not JSON, perhaps you still want to send the raw string to stdout
                 # Or handle this case by sending a specific error message/format
-                sys.stdout.write(message_data_raw + '\n') # Or a different format for non-JSON
-                sys.stdout.flush()
+                
+                # sys.stdout.write(message_data_raw + '\n') # Or a different format for non-JSON
+                # sys.stdout.flush()
                 # You can still use sys.stderr for internal debugging/warning messages:
                 sys.stderr.write(f"--- Pub/Sub Listener Warning: Message data is not valid JSON. Treating as raw string. ---\n")
                 sys.stderr.flush()
 
 
-
-
             sys.stderr.write(f"--- Pub/Sub Listener: Raw message payload: {message_data_raw} ---\n")
             sys.stderr.flush() # problem? 
-            sys.stderr.write("above")
-            sys.stderr.flush()
             
 
             # # Add attributes to the payload. Attributes are often crucial for metadata.
