@@ -155,7 +155,6 @@ class UnityAutomationOrchestrator(Agent):
         description: str,
         instruction: str,
         sub_agents: list,
-        before_model_callback: Any,
         tools: Optional[list] = None,
         **kwargs, # Accept any other kwargs that Pydantic might inject or we want to pass
     ):
@@ -192,6 +191,13 @@ class UnityAutomationOrchestrator(Agent):
             tools = []
         tools.append(get_build_status_tool) # Add the wrapped function here
 
+        # --- CRITICAL FIX FOR _before_agent_callback ---
+        # Create a lambda that captures the 'self' of *this* Orchestrator instance.
+        # When the ADK calls this lambda, the lambda in turn calls the
+        # actual instance method self._before_agent_callback,
+        # thereby correctly passing 'self' to it.
+        bound_callback_for_adk = lambda **cb_kwargs: self._before_agent_callback(**cb_kwargs)
+
         # Pass all arguments, including your custom internal state, to the base Agent constructor.
         # Pydantic will handle the assignment to the declared fields.
         super().__init__(
@@ -201,7 +207,7 @@ class UnityAutomationOrchestrator(Agent):
             instruction=instruction,
             tools=tools,
             sub_agents=sub_agents,
-            before_model_callback=before_model_callback,
+            before_model_callback=bound_callback_for_adk,
             build_status_queue=initial_build_status_queue,
             current_build_statuses=initial_current_build_statuses,
             **kwargs # Pass any remaining kwargs
@@ -402,7 +408,6 @@ if build_orchestration_agent:
             ),
             tools=[], # Add the tool here
             sub_agents=[build_orchestration_agent], # Pass your sub-agent instance here
-            before_model_callback=UnityAutomationOrchestrator._before_agent_callback
         )
         print(f"✅ Root Agent '{root_agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
     except Exception as e:
