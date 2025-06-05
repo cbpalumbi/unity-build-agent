@@ -1,7 +1,7 @@
 import os
 import asyncio
 import json
-import base64
+import uuid
 
 from google.adk.agents import Agent
 from google.adk.runners import Runner, InMemorySessionService
@@ -42,15 +42,18 @@ def publish_build_request(message_payload: str) -> dict:
     # This aligns with how your PowerShell script expects it.
     data_bytes = message_payload.encode('utf-8')
 
+    build_id = str(uuid.uuid4())
+
     try:
         print(f"--- Tool: publish_build_request called with payload: '{message_payload}' ---")
-        future = publisher.publish(topic_path, data=data_bytes)
+        future = publisher.publish(topic_path, data=data_bytes, build_id=build_id)
         message_id = future.result()
         print(f"SUCCESS: Published message with ID: {message_id}")
         return {
             "status": "success",
             "message": f"Build request published to Pub/Sub with ID: {message_id}",
-            "message_payload": message_payload
+            "message_payload": message_payload,
+            "build_id": build_id
         }
     except Exception as e:
         print(f"ERROR: Failed to publish message to Pub/Sub: {e}")
@@ -58,6 +61,41 @@ def publish_build_request(message_payload: str) -> dict:
             "status": "error",
             "error_message": f"Failed to publish build request: {e}"
         }
+
+def receive_build_completion(build_id: str, gcs_path: str) -> dict:
+    """
+    Receives a build completion message from the external system (e.g., VM).
+    Updates the session state with the build's final status and GCS path.
+
+    Args:
+        build_id (str): The unique ID of the completed build.
+        gcs_path (str): The Google Cloud Storage path where the build artifacts are located.
+
+    Returns:
+        dict: A status message indicating success or failure.
+    """
+    # NOTE: In a real scenario, this tool would be called internally by
+    # a Pub/Sub listener that integrates with the ADK Runner.
+    # For testing, we will simulate calling this tool via the Runner.
+
+    print(f"--- Tool: receive_build_completion called with build_id: {build_id}, gcs_path: {gcs_path} ---")
+
+    # This tool needs to access the session state to update it.
+    # We can't directly access `session` or `runner` here in a standalone tool function
+    # like this because tools are just functions. The ADK runner provides a way for tools
+    # to access the current session state via `runner.set_session_state()`.
+    # For now, let's keep it simple by assuming the agent (LLM) will use its
+    # knowledge of the tool to formulate a response to the user.
+    # The actual state update will be handled by the runner processing the tool's return.
+
+    # This function just returns what the tool's result should be.
+    # The runner will then decide how to update the session state based on this result.
+    return {
+        "status": "completed",
+        "build_id": build_id,
+        "gcs_path": gcs_path,
+        "message": f"Build {build_id} is complete and available at {gcs_path}.",
+    }
 
 # --- Agent Definitions ---
 
@@ -72,10 +110,12 @@ build_orchestration_agent = Agent(
         "Always confirm with the user before publishing a new build request, as it can take time. "
         "Once a build request is published, inform the user that the build has been initiated. "
         "You are responsible for formulating the correct message payload for 'publish_build_request' "
+        "You will receive build completion messages. When you receive a build completion message, "
+        "inform the user that the build is complete and provide the GCS path. " 
         "based on the desired Git information (e.g., 'checkout_and_build:main' or 'checkout_and_build:specific_commit_hash')."
     ),
     description="Manages triggering remote Unity project builds via Pub/Sub.",
-    tools=[publish_build_request], # Only the publishing tool here
+    tools=[publish_build_request, receive_build_completion] # Only the publishing tool here
 )
 print(f"✅ Agent '{build_orchestration_agent.name}' created.")
 
@@ -122,6 +162,25 @@ async def call_agent_async(
     if response.tool_results:
         for tool_result in response.tool_results:
             print(f"--- Tool Result: {tool_result.result} ---")
+            # --- Store the build_id if it's a publish_build_request result ---
+            if tool_call.tool_name == "publish_build_request" and "build_id" in tool_result.result:
+                build_id = tool_result.result["build_id"]
+
+                # Retrieve the current session to update its state
+                current_session = await runner.session_service.get_session(
+                    app_name=runner.app_name,
+                    user_id=user_id,
+                    session_id=session_id
+                )
+                if "build_status" not in current_session.state:
+                    current_session.state["build_status"] = {}
+                current_session.state["build_status"][build_id] = "pending"
+
+                # Update the session (important for persistence)
+                await runner.session_service.update_session(current_session)
+
+                print(f"--- Stored build_id: {build_id} in session state with status 'pending' ---")
+
 
 # --- Interact with the Agent Team ---
 if root_agent: # Only run if the root agent was successfully created
