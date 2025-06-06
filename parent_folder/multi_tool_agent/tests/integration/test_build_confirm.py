@@ -21,11 +21,6 @@ async def test_build_confirmation_flow():
     print(f"Attempting to evaluate agent from module: {AGENT_MODULE_PATH}")
     print(f"Using test data path: {TEST_DATA_PATH}") # <--- Changed print message
 
-    custom_criteria = {
-        "response_match_score": 0.5,  # Lowered the threshold here
-        "tool_trajectory_avg_score": 1.0, # Keep this at 1.0 for exact tool matching
-    }
-
     # Ensure the test directory exists
     if not os.path.exists(TEST_DATA_PATH): # <--- Check the directory
         pytest.fail(f"Test data path not found: {TEST_DATA_PATH}")
