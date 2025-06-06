@@ -29,7 +29,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "Okay, I will build the game with the message `start_build_for_unityadmin`.\n\nBefore I proceed, please confirm that you want to initiate this build. It will take some time to complete.\n"
+                "text": "Okay, I will initiate a build with the message 'start_build_for_unityadmin'.\nBefore I do that, are you sure you want to proceed? This action will trigger a full build on the remote VM, which may take some time.\n"
               }
             ],
             "role": "model"

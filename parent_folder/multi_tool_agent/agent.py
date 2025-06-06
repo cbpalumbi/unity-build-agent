@@ -29,7 +29,8 @@ MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way t
 def publish_build_request(message_payload: str) -> dict:
     """Publishes a build request message to the Google Cloud Pub/Sub topic.
 
-    This function is intended to be used as a tool by the BuildOrchestrationAgent.
+    This function is intended to be used as a tool by the BuildOrchestrationAgent. 
+    It does not report build or request ids to the user.
 
     Args:
         message_payload (str): The string payload to send. Examples:
@@ -133,14 +134,13 @@ class UnityAutomationOrchestrator(Agent):
         # Register the shutdown method here when the orchestrator is created
         atexit.register(self.shutdown)
 
-        # We need to capture 'self' in the lambda's closure
-        # The LLM framework will see this as a function that takes 'build_id'
-        # The actual 'self' for get_build_status will be provided by the closure.
+        # Wrapper for get_build_status.
         def get_build_status_tool(build_id: Optional[str] = None) -> dict:
             """
-            Retrieves the status of a specific build by ID, or all known build statuses if no ID is provided.
+            Retrieves the most recent build status. Ex: 'nobuild', 'success', 'failed'.
+            Does not take in a build id or report one. If the user says they'd like to wait, 
+            say Sounds good. Let me know when you'd like to check the build status again.
             Args:
-                build_id (str): The unique ID of the build to check. If None, returns all known statuses.
             Returns:
                 dict: A dictionary containing the status of the requested build(s).
             """
@@ -192,12 +192,10 @@ class UnityAutomationOrchestrator(Agent):
  
     def get_build_status(self, build_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Retrieves the status of a specific build by ID, or all known build statuses if no ID is provided.
-        First, it processes any pending build status updates from the internal queue
-        to ensure the information is current.
+        Retrieves the most recent build status. Ex: 'nobuild', 'success', 'failed'.
+        Does not take in a build id or report one. 
 
         Args:
-            build_id (str): The unique ID of the build to check. If None, returns all known statuses.
         Returns:
             dict: A dictionary containing the status of the requested build(s).
         """

@@ -32,7 +32,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "Okay, I will build the game with the message \"start_build_for_unityadmin\". Just to confirm, are you sure you want to proceed? This will initiate a full build on the remote VM, which may take some time."
+                "text": "Okay, I will build the game with the message 'start_build_for_unityadmin'. Just to confirm, are you sure you want to proceed? This will initiate a build on the remote VM, which can take some time.\n"
               }
             ],
             "role": "model"
@@ -55,26 +55,40 @@
                 "id": "",
                 "name": "publish_build_request",
                 "args": {
-                  "payload": "start_build_for_unityadmin",
-                  "nobuild": true
+                  "message_payload": "start_build_for_unityadmin"
                 }
               }
             ],
-            "intermediate_responses": [
-              [
-                "publish_build_request",
-                [
-                  {
-                    "text": "SUCCESS: Published message with ID: 14912076532097484"
-                  }
-                ]
-              ]
-            ]
+            "intermediate_responses": []
           },
           "final_response": {
             "parts": [
               {
-                "text": "OK. I have initiated the build with message ID 14912076532097484. The build ID is 24eed206-67bf-4788-a169-4e11e65d2772."
+                "text": "A build request has been initiated with the message 'start_build_for_unityadmin'.\n"
+              }
+            ],
+            "role": "model"
+          }
+        },
+        {
+          "invocation_id": "",
+          "creation_timestamp": 0.0,
+          "user_content": {
+            "parts": [
+              {
+                "text": "Okay, I'll wait a bit."
+              }
+            ],
+            "role": "user"
+          },
+          "intermediate_data": {
+            "tool_uses": [],
+            "intermediate_responses": []
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "Sounds good. Let me know when you'd like to check the build status again."
               }
             ],
             "role": "model"
@@ -99,6 +113,11 @@
                 "args": {
                   "agent_name": "UnityAutomationOrchestrator"
                 }
+              },
+              {
+                "id": "",
+                "name": "get_build_status_tool",
+                "args": {}
               }
             ],
             "intermediate_responses": []
@@ -106,48 +125,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "Since I only handle the triggering of builds, I can't provide you with the build status. I will transfer you to the UnityAutomationOrchestrator agent, who can provide build status updates."
-              }
-            ],
-            "role": "model"
-          }
-        },
-        {
-          "invocation_id": "",
-          "creation_timestamp": 0.0,
-          "user_content": {
-            "parts": [
-              {
-                "text": "What is the status of the build?"
-              }
-            ],
-            "role": "user"
-          },
-          "intermediate_data": {
-            "tool_uses": [
-              {
-                "id": "",
-                "name": "get_build_status_tool",
-                "args": {
-                  "build_id": "24eed206-67bf-4788-a169-4e11e65d2772"
-                }
-              }
-            ],
-            "intermediate_responses": [
-              [
-                "get_build_status_tool",
-                [
-                  {
-                    "text": "{\"build_id\": \"24eed206-67bf-4788-a169-4e11e65d2772\", \"status\": \"nobuild\", \"timestamp\": \"2025-06-06T00:25:37Z\"}"
-                  }
-                ]
-              ]
-            ]
-          },
-          "final_response": {
-            "parts": [
-              {
-                "text": "The build status for build ID 24eed206-67bf-4788-a169-4e11e65d2772 is nobuild, and the timestamp is 2025-06-06T00:25:37Z."
+                "text": "The status of the most recent build is 'nobuild'.\n"
               }
             ],
             "role": "model"
