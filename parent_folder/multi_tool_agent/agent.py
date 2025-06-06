@@ -375,12 +375,13 @@ build_orchestration_agent = Agent(
 print(f"✅ Agent '{build_orchestration_agent.name}' created.")
 
 # --- Root Unity Automation Orchestrator Agent ---
-agent = None
+root_agent = None
+agent = root_agent # needs a duplicate variable for pytest 
 # Ensure build_orchestration_agent was created successfully
 if build_orchestration_agent:
     try:
         # Instantiate your custom root agent class, passing all necessary arguments
-        agent = UnityAutomationOrchestrator(
+        root_agent = UnityAutomationOrchestrator(
             name="UnityAutomationOrchestrator",
             model=MODEL_GEMINI_2_0_FLASH,
             description=(
@@ -405,48 +406,12 @@ if build_orchestration_agent:
             tools=[], # Leave this empty because the stateful tools are added manually on init
             sub_agents=[build_orchestration_agent], # Pass your sub-agent instance here
         )
-        print(f"✅ Root Agent '{agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
-    # except KeyboardInterrupt:
-    #     print("\nCtrl+C detected. Shutting down gracefully...")
+        agent = root_agent # needs a duplicate variable for pytest. don't worry about it
+        print(f"✅ Root Agent '{root_agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
     except Exception as e:
         print(f"❌ Could not create Root Unity Agent. Error: {e}")
-    # finally:
-    #     root_agent.shutdown()
     
 else:
     print("❌ Cannot create Root Unity Agent because the BuildOrchestrationAgent failed to initialize.")
 
 # --- Helper function for async interaction (from ADK quickstart) ---
-async def call_agent_async(
-    query: str, runner: Runner, user_id: str, session_id: str
-) -> None:
-    print(f"\n--- User: {query} ---")
-    response = await runner.send_message(
-        message=query, user_id=user_id, session_id=session_id
-    )
-    print(f"--- Agent: {response.text} ---")
-    if response.tool_calls:
-        for tool_call in response.tool_calls:
-            print(f"--- Tool Call: {tool_call.tool_name}({tool_call.args}) ---")
-    if response.tool_results:
-        for tool_result in response.tool_results:
-            print(f"--- Tool Result: {tool_result.result} ---")
-            # --- Store the build_id if it's a publish_build_request result ---
-            if tool_call.tool_name == "publish_build_request" and "build_id" in tool_result.result:
-                build_id = tool_result.result["build_id"]
-
-                # Retrieve the current session to update its state
-                current_session = await runner.session_service.get_session(
-                    app_name=runner.app_name,
-                    user_id=user_id,
-                    session_id=session_id
-                )
-                if "build_status" not in current_session.state:
-                    current_session.state["build_status"] = {}
-                current_session.state["build_status"][build_id] = "pending"
-
-                # Update the session (important for persistence)
-                await runner.session_service.update_session(current_session)
-
-                print(f"--- Stored build_id: {build_id} in session state with status 'pending' ---")
-
