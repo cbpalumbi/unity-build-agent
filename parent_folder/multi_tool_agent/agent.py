@@ -212,6 +212,8 @@ class UnityAutomationOrchestrator(Agent):
                     self.current_build_statuses[b_id] = notification
                     updates_applied += 1
                     print(f"  Processed update for build ID: {b_id}, Status: {notification.get('status', 'N/A')}")
+                else:
+                    print("Update from queue is missing build id.")
                 # Optionally, you can add a small sleep to prevent busy-waiting
                 # if the queue might be populated very rapidly, though get_nowait()
                 # handles the empty case immediately.
@@ -284,6 +286,7 @@ class UnityAutomationOrchestrator(Agent):
             if self.listener_stderr_file_handle:
                 self.listener_stderr_file_handle.close()
             self.listener_stderr_file_handle = None
+   
     def _read_listener_stdout(self):
         """
         Continuously reads lines from the listener.py's stdout, parses them as JSON,
@@ -304,7 +307,7 @@ class UnityAutomationOrchestrator(Agent):
                         try:
                             notification = json.loads(line)
                             self.build_status_queue.put(notification)
-                            print(f"Your build may have finished. Try asking about its status")
+                            print(f"Your build may have finished. Try asking about its status. Item was added to build queue")
                         except json.JSONDecodeError as e:
                             print(f"Failed to decode JSON from listener stdout: {line} - Error: {e}")
                 else:
