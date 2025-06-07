@@ -51,7 +51,7 @@ def publish_build_request(message_payload: str) -> dict:
     data_bytes = message_payload.encode('utf-8')
 
     build_id = str(uuid.uuid4())
-    nobuild = True # DEBUG SETTING HARDCODED !!! 
+    nobuild = False # DEBUG SETTING HARDCODED !!! 
 
     # Prepare attributes. All attribute values must be strings.
     attributes = {
