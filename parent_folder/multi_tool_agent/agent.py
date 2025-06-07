@@ -26,7 +26,7 @@ MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way t
 
 # --- Pub/Sub Publisher Tool (used by BuildOrchestrationAgent) ---
 
-def publish_build_request(message_payload: str) -> dict:
+def publish_build_request(message_payload: str, test_build: bool) -> dict:
     """Publishes a build request message to the Google Cloud Pub/Sub topic.
 
     This function is intended to be used as a tool by the BuildOrchestrationAgent. 
@@ -37,7 +37,7 @@ def publish_build_request(message_payload: str) -> dict:
                                "start_build_for_unityadmin"
                                "checkout_and_build:main"
                                "checkout_and_build:abcdef1234567890abcdef1234567890"
-        nobuild (bool): If True, sends a 'nobuild' attribute with the message,
+        test_build (bool): If True, sends a 'nobuild' attribute with the message,
                         indicating to the consumer that no actual build should occur.
 
     Returns:
@@ -51,17 +51,18 @@ def publish_build_request(message_payload: str) -> dict:
     data_bytes = message_payload.encode('utf-8')
 
     build_id = str(uuid.uuid4())
-    nobuild = False # DEBUG SETTING HARDCODED !!! 
 
     # Prepare attributes. All attribute values must be strings.
     attributes = {
         "build_id": build_id
     }
-    if nobuild:
+
+    #test_build = False # DEBUG SETTING HARDCODED !!! will override user choice if un-commented
+    if test_build:
         attributes["nobuild"] = "true" # Send "true" as a string
 
     try:
-        print(f"--- Tool: publish_build_request called with payload: '{message_payload}', nobuild={nobuild} ---")
+        print(f"--- Tool: publish_build_request called with payload: '{message_payload}', nobuild={test_build} ---")
         future = publisher.publish(topic_path, data=data_bytes, **attributes) # Pass attributes using **
         message_id = future.result()
         print(f"SUCCESS: Published message with ID: {message_id}")
@@ -70,7 +71,7 @@ def publish_build_request(message_payload: str) -> dict:
             "message": f"Build request published to Pub/Sub with ID: {message_id}",
             "message_payload": message_payload,
             "build_id": build_id,
-            "nobuild_flag_sent": nobuild # Indicate if the flag was sent
+            "nobuild_flag_sent": test_build # Indicate if the flag was sent
         }
     except Exception as e:
         print(f"ERROR: Failed to publish message to Pub/Sub: {e}")
@@ -368,7 +369,8 @@ build_orchestration_agent = Agent(
         "Use the 'publish_build_request' tool to initiate a build on the remote VM. "
         "Always confirm with the user before publishing a new build request, as it can take time. "
         "Once a build request is published, inform the user that the build has been initiated. "
-        "You are responsible for formulating the correct message payload for 'publish_build_request' "
+        "You are responsible for formulating the correct message payload for 'publish_build_request'"
+        "You should determine whether the user wants a test build (nobuild should be true) or a full build (no build false)"
     ),
     description="Manages triggering remote Unity project builds via Pub/Sub.",
     tools=[publish_build_request] # Only the publishing tool here
