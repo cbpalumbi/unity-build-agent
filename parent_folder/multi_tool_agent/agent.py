@@ -5,10 +5,9 @@ import subprocess # For launching listener.py
 import threading  # For the internal Pub/Sub listener thread
 import queue      # For passing messages from internal listener to main agent logic
 import atexit
+from datetime import datetime
 
 from google.adk.agents import Agent
-from google.adk.runners import Runner, InMemorySessionService
-from google.adk.agents.callback_context import CallbackContext
 from google.cloud import pubsub_v1 # Import Pub/Sub client
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
@@ -26,19 +25,22 @@ MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way t
 
 # --- Pub/Sub Publisher Tool (used by BuildOrchestrationAgent) ---
 
-def publish_build_request(message_payload: str, test_build: bool) -> dict:
+def publish_build_request(
+    command: str,
+    branch_name: str,
+    commit_hash: str,
+    is_test_build: bool,
+) -> dict:
     """Publishes a build request message to the Google Cloud Pub/Sub topic.
 
     This function is intended to be used as a tool by the BuildOrchestrationAgent. 
     It does not report build or request ids to the user.
 
     Args:
-        message_payload (str): The string payload to send. Examples:
-                               "start_build_for_unityadmin"
-                               "checkout_and_build:main"
-                               "checkout_and_build:abcdef1234567890abcdef1234567890"
-        test_build (bool): If True, sends a 'nobuild' attribute with the message,
-                        indicating to the consumer that no actual build should occur.
+        command (str): The primary command for the VM (e.g., "start_build", "checkout_and_build").
+        branch_name (str): The Git branch name to build from.
+        commit_hash (str): The specific Git commit hash (full SHA preferred).
+        is_test_build (bool): If True, indicates a test build (no actual Unity build).
 
     Returns:
         dict: Status and message or error details.
@@ -46,39 +48,32 @@ def publish_build_request(message_payload: str, test_build: bool) -> dict:
     publisher = pubsub_v1.PublisherClient()
     topic_path = publisher.topic_path(GOOGLE_CLOUD_PROJECT_ID, UNITY_BUILD_PUB_SUB_TOPIC_ID)
 
-    # The message payload is a string, which we'll Base64 encode before sending.
-    # This aligns with how your PowerShell script expects it.
-    data_bytes = message_payload.encode('utf-8')
+    build_id = str(uuid.uuid4()) # unique hash for this build request
 
-    build_id = str(uuid.uuid4())
-
-    # Prepare attributes. All attribute values must be strings.
-    attributes = {
-        "build_id": build_id
+    # Create a structured dictionary for the payload
+    message_data = {
+        "build_id": build_id, 
+        "command": command,
+        "branch_name": branch_name,
+        "commit_hash": commit_hash,
+        "is_test_build": is_test_build,
+        "request_timestamp": datetime.now().isoformat(), # Add timestamp for logging/tracking
     }
 
-    #test_build = False # DEBUG SETTING HARDCODED !!! will override user choice if un-commented
-    if test_build:
-        attributes["nobuild"] = "true" # Send "true" as a string
+    # Encode the dictionary to a JSON string, then to bytes
+    data_bytes = json.dumps(message_data).encode('utf-8')
+    attributes = {}
 
     try:
-        print(f"--- Tool: publish_build_request called with payload: '{message_payload}', nobuild={test_build} ---")
-        future = publisher.publish(topic_path, data=data_bytes, **attributes) # Pass attributes using **
+        print(f"--- Tool: publish_build_request for build_id: '{build_id}' ---")
+        print(f"Payload: {json.dumps(message_data, indent=2)}") # For better logging
+        future = publisher.publish(topic_path, data=data_bytes, **attributes)
         message_id = future.result()
-        print(f"SUCCESS: Published message with ID: {message_id}")
-        return {
-            "status": "success",
-            "message": f"Build request published to Pub/Sub with ID: {message_id}",
-            "message_payload": message_payload,
-            "build_id": build_id,
-            "nobuild_flag_sent": test_build # Indicate if the flag was sent
-        }
+        print(f"SUCCESS: Published message with Pub/Sub message ID: {message_id}")
+        return {"status": "success", "build_id": build_id, "message_id": message_id}
     except Exception as e:
-        print(f"ERROR: Failed to publish message to Pub/Sub: {e}")
-        return {
-            "status": "error",
-            "error_message": f"Failed to publish build request: {e}"
-        }
+        print(f"ERROR: Failed to publish message: {e}")
+        return {"status": "error", "message": str(e)}
 
 # --- Agent Definitions ---
 class UnityAutomationOrchestrator(Agent):
