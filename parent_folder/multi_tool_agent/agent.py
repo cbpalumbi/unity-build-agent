@@ -300,7 +300,7 @@ class UnityAutomationOrchestrator(Agent):
                 if line:
                     line = line.strip()
                     if line: # Ensure the line is not empty after stripping
-                        #print(f"[Listener STDOUT]: {line}") # For debugging
+                        print(f"[Listener STDOUT]: {line}") # For debugging
                         try:
                             notification = json.loads(line)
                             self.build_status_queue.put(notification)
