@@ -5,10 +5,10 @@ import subprocess # For launching listener.py
 import threading  # For the internal Pub/Sub listener thread
 import queue      # For passing messages from internal listener to main agent logic
 import atexit
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from google.adk.agents import Agent
-from google.cloud import pubsub_v1 # Import Pub/Sub client
+from google.cloud import pubsub_v1, storage # Import Pub/Sub client
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 
@@ -22,6 +22,24 @@ UNITY_BUILD_PUB_SUB_TOPIC_ID = os.getenv("UNITY_BUILD_PUB_SUB_TOPIC_ID", "unity-
 
 # Define the model for agents
 MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way to reference it
+
+def generate_signed_url(bucket_name: str, blob_name: str, expiration_minutes=60) -> str:
+    """Generates a signed URL for a GCS object valid for expiration_minutes."""
+    if not bucket_name or not blob_name:
+        raise ValueError("Bucket name and blob name must be non-empty.")
+    if expiration_minutes <= 0:
+        raise ValueError("Expiration time must be a positive number.")
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expiration_minutes),
+        method="GET",
+    )
+    return url
 
 # --- Pub/Sub Publisher Tool (used by BuildOrchestrationAgent) ---
 
@@ -142,6 +160,18 @@ class UnityAutomationOrchestrator(Agent):
             """
             return self.get_build_status(build_id=build_id)
         
+        def get_asset_signed_url_tool(build_id: Optional[str] = None) -> str:
+            """
+            Produces a signed url from a Google Cloud Store bucket path.
+            Reports the url.
+            Args:
+                build_id: The build_id for the requested build
+            Returns:
+                signed_url: The signed url where the user can access the asset
+            """
+            return self.get_asset_signed_url(build_id=build_id)
+
+        
         # Append this *callable* to the tools list
         # If your ADK expects a list of tool *functions*, then pass this directly.
         # If it expects a specific Tool object, you'd instantiate that.
@@ -149,6 +179,7 @@ class UnityAutomationOrchestrator(Agent):
         if tools is None:
             tools = []
         tools.append(get_build_status_tool) # Add the wrapped function here
+        tools.append(get_asset_signed_url_tool)
 
         # --- CRITICAL FIX FOR _before_agent_callback ---
         # Create a lambda that captures the 'self' of *this* Orchestrator instance.
@@ -206,6 +237,7 @@ class UnityAutomationOrchestrator(Agent):
                 if b_id:
                     # Update the orchestrator's internal dictionary with the latest status
                     self.current_build_statuses[b_id] = notification
+                    self.current_build_statuses[b_id]['status'] = "success"
                     updates_applied += 1
                     print(f"  Processed update for build ID: {b_id}, Status: {notification.get('status', 'N/A')}")
                 else:
@@ -245,6 +277,40 @@ class UnityAutomationOrchestrator(Agent):
         
         # Return a copy to prevent external modification
         return {"all_build_statuses": self.current_build_statuses.copy()}
+
+    def get_asset_signed_url(self, build_id):
+        """
+        Produces a signed url from a Google Cloud Store bucket path
+        Reports the url.
+
+        Args:
+            build_id: The build_id for the requested build
+        Returns:
+            signed_url: The signed url where the user can access the asset
+        """
+        print("get_asset_signed_url called with build_id ", build_id)
+        if build_id:
+            status_info = self.current_build_statuses.get(build_id)
+            if status_info:
+                print("status info ", status_info)
+                if (status_info.get('status', 'unknown') == 'success'):
+                    gcs_full_path = status_info.get('gcs_path', 'N/A')
+                    path_parts = gcs_full_path.replace("gs://", "").split('/', 1) # Split only on the first slash after gs://
+                    bucket_name = path_parts[0]
+                    blob_name = path_parts[1]
+                    signed_url = generate_signed_url(bucket_name, blob_name)
+                    print("Signed url is ", signed_url)
+                    return signed_url
+                else: 
+                    print("LOG: no build status")
+            else:
+                print("LOG: no status info")
+        else: 
+            print("LOG: no build id")
+        
+        return None
+        
+
 
     def start_external_listener_subprocess(self):
         """
@@ -301,7 +367,7 @@ class UnityAutomationOrchestrator(Agent):
                     if line: # Ensure the line is not empty after stripping
                         print(f"[Listener STDOUT]: {line}") # For debugging
                         try:
-                            notification = json.loads(line)
+                            notification = json.loads(line) # TODO: verify type and stuff 
                             self.build_status_queue.put(notification)
                             print(f"Your build may have finished. Try asking about its status. Item was added to build queue")
                         except json.JSONDecodeError as e:
@@ -366,6 +432,7 @@ build_orchestration_agent = Agent(
         "Once a build request is published, inform the user that the build has been initiated. "
         "You are responsible for formulating the correct message payload for 'publish_build_request'"
         "You should determine whether the user wants a test build (nobuild should be true) or a full build (no build false)"
+        "You can also provide signed urls for succesfully build assets."
     ),
     description="Manages triggering remote Unity project builds via Pub/Sub.",
     tools=[publish_build_request] # Only the publishing tool here
