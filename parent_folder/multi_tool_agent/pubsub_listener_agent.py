@@ -1,4 +1,17 @@
-# pubsub_listener_agent.py
+"""
+pubsub_listener_agent.py
+
+An ADK BaseAgent implementation that listens to Google Cloud Pub/Sub subscription messages,
+acknowledges them, and emits corresponding ADK Events asynchronously.
+
+Intended to be run as part of an ADK Runner session loop.
+
+Environment variables required:
+- APP_NAME
+- PROJECT_ID
+- SUBSCRIPTION_NAME
+
+"""
 
 import asyncio
 import os
@@ -16,12 +29,20 @@ from google.api_core.exceptions import DeadlineExceeded
 from dotenv import load_dotenv
 
 load_dotenv()
+
+required_env_vars = ["APP_NAME", "PROJECT_ID", "SUBSCRIPTION_NAME"]
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+
+if missing_vars:
+    raise EnvironmentError(
+        f"Missing required environment variables: {', '.join(missing_vars)}. "
+        "Please set them in your environment or .env file."
+    )
+
 # Pub/Sub config (make sure these are set in your env or manually here)
 APP_NAME = os.getenv("APP_NAME", "default_app_name")
 PROJECT_ID = os.getenv("PROJECT_ID", "default_project_id")
 SUBSCRIPTION_NAME = os.getenv("SUBSCRIPTION_NAME", "default_subscription_name")
-USER_ID = "user_001"
-SESSION_ID = "pubsub_listener_session"
 
 SUBSCRIPTION_ID = f"{SUBSCRIPTION_NAME}-{APP_NAME}"
 completion_subscription_path = f"projects/{PROJECT_ID}/subscriptions/{SUBSCRIPTION_ID}"
@@ -35,6 +56,20 @@ class PubSubListenerAgent(BaseAgent):
         object.__setattr__(self, 'subscriber', pubsub_v1.SubscriberClient())
         object.__setattr__(self, 'subscription_path', self.subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID))
         self._stop_event = asyncio.Event()
+
+    def close(self):
+        """Explicitly close the subscriber client."""
+        if hasattr(self, 'subscriber') and self.subscriber:
+            print("[DEBUG] Closing subscriber client.")
+            self.subscriber.close()
+            object.__setattr__(self, 'subscriber', None)
+
+    def __del__(self):
+        """Destructor to ensure subscriber client is closed."""
+        try:
+            self.close()
+        except Exception as e:
+            print(f"[WARN] Exception during PubSubListenerAgent cleanup: {e}")
 
     async def _run_async_impl(self, context: InvocationContext) -> AsyncGenerator[Event, None]:
         """Listen to Pub/Sub messages and yield ADK Events asynchronously."""
@@ -52,7 +87,7 @@ class PubSubListenerAgent(BaseAgent):
         while True:
             if self._stop_event.is_set():
                 print("[DEBUG] Shutting down PubSubBuildListenerAgent gracefully.")
-                self.subscriber.close()
+                self.close()
                 break
             else: 
                 try:
