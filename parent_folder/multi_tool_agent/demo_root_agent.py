@@ -4,9 +4,9 @@ from google.adk.runners import Runner, InMemorySessionService
 from google.adk.events import Event
 from google.adk.agents import ParallelAgent, LlmAgent
 from google.genai.types import ModelContent, UserContent
-
 from pubsub_listener_agent import PubSubListenerAgent
-
+from dotenv import load_dotenv
+load_dotenv()
 APP_NAME = os.getenv("APP_NAME", "default_app_name")
 
 class RootAgent(LlmAgent):

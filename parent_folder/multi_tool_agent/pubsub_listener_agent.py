@@ -13,7 +13,9 @@ from google.adk.events import Event
 from google.genai.types import UserContent, ModelContent
 from google.cloud import pubsub_v1
 from google.api_core.exceptions import DeadlineExceeded
+from dotenv import load_dotenv
 
+load_dotenv()
 # Pub/Sub config (make sure these are set in your env or manually here)
 APP_NAME = os.getenv("APP_NAME", "default_app_name")
 PROJECT_ID = os.getenv("PROJECT_ID", "default_project_id")
