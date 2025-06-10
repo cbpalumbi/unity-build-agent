@@ -24,15 +24,15 @@ SESSION_ID = "pubsub_listener_session"
 SUBSCRIPTION_ID = f"{SUBSCRIPTION_NAME}-{APP_NAME}"
 completion_subscription_path = f"projects/{PROJECT_ID}/subscriptions/{SUBSCRIPTION_ID}"
 
-class PubSubBuildListenerAgent(BaseAgent):
+class PubSubListenerAgent(BaseAgent):
     def __init__(self):
+        print("[DEBUG] Initializing listener agent")
         super().__init__(name="PubSubBuildListenerAgent", description="Listens to GCP Pub/Sub and emits ADK messages.")
 
         # Initialize custom vars after base Pydantic setup
         object.__setattr__(self, 'subscriber', pubsub_v1.SubscriberClient())
         object.__setattr__(self, 'subscription_path', self.subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID))
         self._stop_event = asyncio.Event()
-        print(f"[DEBUG] Stop event initially set? {self._stop_event.is_set()}")
 
     async def _run_async_impl(self, context: InvocationContext) -> AsyncGenerator[Event, None]:
         """Listen to Pub/Sub messages and yield ADK Events asynchronously."""
@@ -47,55 +47,59 @@ class PubSubBuildListenerAgent(BaseAgent):
             # Windows: fallback - no add_signal_handler, you can rely on external cancellation or other mechanism
             print("[WARN] Signal handlers not supported on Windows; manual shutdown required.")
 
-        while not self._stop_event.is_set():
-            try:
-                # Pull messages synchronously but with timeout to avoid blocking forever
-                response = self.subscriber.pull(
-                    request={
-                        "subscription": self.subscription_path,
-                        "max_messages": 1,
-                    },
-                    timeout=5.0  # non-blocking
-                )
-
-                if not response.received_messages:
-                    # No messages, just wait a short bit before retrying
-                    await asyncio.sleep(1)
-                    continue
-
-                for received_message in response.received_messages:
-                    try:
-                        payload = json.loads(received_message.message.data.decode("utf-8"))
-                        print(f"[DEBUG] Received message: {payload}")
-
-                        # Emit event for this message
-                        yield Event(
-                            content=ModelContent(f"🎉 Received pubsub notification: {payload}"),
-                            author=self.name 
-                        )
-
-                    except Exception as e:
-                        print(f"[DEBUG] Error processing message: {e}")
-
-                    # Acknowledge the message
-                    self.subscriber.acknowledge(
+        while True:
+            if self._stop_event.is_set():
+                print("[DEBUG] Shutting down PubSubBuildListenerAgent gracefully.")
+                self.subscriber.close()
+                break
+            else: 
+                try:
+                    # Pull messages synchronously but with timeout to avoid blocking forever
+                    response = self.subscriber.pull(
                         request={
                             "subscription": self.subscription_path,
-                            "ack_ids": [received_message.ack_id],
-                        }
+                            "max_messages": 1,
+                        },
+                        timeout=5.0  # non-blocking
                     )
-            except DeadlineExceeded:
-                # This happens if the server times out waiting for messages; just retry. expected behavior
-                await asyncio.sleep(1)
-            except Exception as e:
-                print(f"[DEBUG] Exception in run_async loop: {e}")
-                await asyncio.sleep(5)  # Backoff on error
 
-        print("[DEBUG] Shutting down PubSubBuildListenerAgent gracefully.")
-        self.subscriber.close()
+                    if not response.received_messages:
+                        # No messages, just wait a short bit before retrying
+                        await asyncio.sleep(1)
+                        continue
+
+                    for received_message in response.received_messages:
+                        try:
+                            payload = json.loads(received_message.message.data.decode("utf-8"))
+                            #print(f"[DEBUG] Received message: {payload}")
+
+                            # Acknowledge the message
+                            self.subscriber.acknowledge(
+                                request={
+                                    "subscription": self.subscription_path,
+                                    "ack_ids": [received_message.ack_id],
+                                }
+                            )
+
+                            # Emit event for this message
+                            yield Event(
+                                content=ModelContent(f"🎉 Received pubsub notification: {payload}"),
+                                author=self.name 
+                            )
+
+                        except Exception as e:
+                            print(f"[DEBUG] Error processing message: {e}")
+
+                        
+                except DeadlineExceeded:
+                    # This happens if the server times out waiting for messages; just retry. expected behavior
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    print(f"[DEBUG] Exception in run_async loop: {e}")
+                    await asyncio.sleep(5)  # Backoff on error
 
 async def main():
-    pubsub_agent = PubSubBuildListenerAgent()
+    pubsub_agent = PubSubListenerAgent()
     runner = Runner(app_name=APP_NAME, agent=pubsub_agent, session_service=InMemorySessionService())
 
     await runner.session_service.create_session(
