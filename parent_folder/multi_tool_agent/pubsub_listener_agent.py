@@ -3,16 +3,17 @@
 import asyncio
 import os
 import json
-from google.cloud import pubsub_v1
-from google.adk.agents import LoopAgent, BaseAgent
-from google.adk.events import Event
-from google.genai.types import ModelContent
+from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
+from google.adk.runners import Runner, InMemorySessionService
+from google.adk.events import Event
+from google.genai.types import UserContent, ModelContent
+from google.cloud import pubsub_v1
 from google.api_core.exceptions import DeadlineExceeded
 
 # Pub/Sub config (make sure these are set in your env or manually here)
+APP_NAME = os.getenv("APP_NAME", "default_app_name")
 PROJECT_ID = os.getenv("PROJECT_ID", "default_project_id")
-APP_NAME =  os.getenv("APP_NAME", "default_app_name")
 SUBSCRIPTION_NAME = os.getenv("SUBSCRIPTION_NAME", "default_subscription_name")
 USER_ID = "user_001"
 SESSION_ID = "pubsub_listener_session"
@@ -29,7 +30,7 @@ class PubSubBuildListenerAgent(BaseAgent):
         object.__setattr__(self, 'subscription_path', self.subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID))
 
     async def _run_async_impl(self, context: InvocationContext):
-        print("Starting pub/sub listener...")
+        print("[DEBUG] Starting pub/sub listener...")
         while True:
             try:
                 # Pull messages synchronously but with timeout to avoid blocking forever
@@ -49,16 +50,16 @@ class PubSubBuildListenerAgent(BaseAgent):
                 for received_message in response.received_messages:
                     try:
                         payload = json.loads(received_message.message.data.decode("utf-8"))
-                        print(f"[PubSub Agent] Received message: {payload}")
+                        print(f"[DEBUG] Received message: {payload}")
 
                         # Emit event for this message
                         yield Event(
                             content=ModelContent(f"🎉 Received pubsub notification: {payload}"),
-                            author=self.name  # Proper ADK pattern
+                            author=self.name 
                         )
 
                     except Exception as e:
-                        print(f"[PubSub Agent] Error processing message: {e}")
+                        print(f"[DEBUG] Error processing message: {e}")
 
                     # Acknowledge the message
                     self.subscriber.acknowledge(
@@ -68,16 +69,30 @@ class PubSubBuildListenerAgent(BaseAgent):
                         }
                     )
             except DeadlineExceeded:
-                # This happens if the server times out waiting for messages; just retry.
+                # This happens if the server times out waiting for messages; just retry. expected behavior
                 await asyncio.sleep(1)
             except Exception as e:
-                print(f"[PubSub Agent] Exception in run_async loop: {e}")
+                print(f"[DEBUG] Exception in run_async loop: {e}")
                 await asyncio.sleep(5)  # Backoff on error
 
+async def main():
+    pubsub_agent = PubSubBuildListenerAgent()
 
-# Wrap it in a LoopAgent
-pubsub_loop_agent = LoopAgent(
-    name="PubSubLoopAgent",
-    sub_agents=[PubSubBuildListenerAgent()],
-    max_iterations=1000000,  # Simulate "forever"
-)
+    runner = Runner(app_name=APP_NAME, agent=pubsub_agent, session_service=InMemorySessionService())
+
+    await runner.session_service.create_session(
+        app_name=APP_NAME,
+        user_id="dev_user_01",
+        session_id="build_listener_session"
+    )
+
+    async_gen = runner.run_async(
+        user_id="dev_user_01",
+        session_id="build_listener_session",
+        new_message=UserContent("Starting pub/sub listener agent")
+    )
+    async for event in async_gen:
+        print("Runner received event:", event.content.parts[0].text)
+
+if __name__ == "__main__":
+    asyncio.run(main())
