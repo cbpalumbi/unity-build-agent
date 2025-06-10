@@ -3,6 +3,9 @@
 import asyncio
 import os
 import json
+import signal
+import sys
+from typing import AsyncGenerator
 from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.runners import Runner, InMemorySessionService
@@ -25,13 +28,26 @@ class PubSubBuildListenerAgent(BaseAgent):
     def __init__(self):
         super().__init__(name="PubSubBuildListenerAgent", description="Listens to GCP Pub/Sub and emits ADK messages.")
 
-        # initialize custom vars after base Pydantic setup
+        # Initialize custom vars after base Pydantic setup
         object.__setattr__(self, 'subscriber', pubsub_v1.SubscriberClient())
         object.__setattr__(self, 'subscription_path', self.subscriber.subscription_path(PROJECT_ID, SUBSCRIPTION_ID))
+        self._stop_event = asyncio.Event()
+        print(f"[DEBUG] Stop event initially set? {self._stop_event.is_set()}")
 
-    async def _run_async_impl(self, context: InvocationContext):
+    async def _run_async_impl(self, context: InvocationContext) -> AsyncGenerator[Event, None]:
+        """Listen to Pub/Sub messages and yield ADK Events asynchronously."""
         print("[DEBUG] Starting pub/sub listener...")
-        while True:
+
+        loop = asyncio.get_running_loop()
+        # Register signal handlers to set stop event
+        if sys.platform != "win32":
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(sig, self._stop_event.set)
+        else:
+            # Windows: fallback - no add_signal_handler, you can rely on external cancellation or other mechanism
+            print("[WARN] Signal handlers not supported on Windows; manual shutdown required.")
+
+        while not self._stop_event.is_set():
             try:
                 # Pull messages synchronously but with timeout to avoid blocking forever
                 response = self.subscriber.pull(
@@ -75,9 +91,11 @@ class PubSubBuildListenerAgent(BaseAgent):
                 print(f"[DEBUG] Exception in run_async loop: {e}")
                 await asyncio.sleep(5)  # Backoff on error
 
+        print("[DEBUG] Shutting down PubSubBuildListenerAgent gracefully.")
+        self.subscriber.close()
+
 async def main():
     pubsub_agent = PubSubBuildListenerAgent()
-
     runner = Runner(app_name=APP_NAME, agent=pubsub_agent, session_service=InMemorySessionService())
 
     await runner.session_service.create_session(
