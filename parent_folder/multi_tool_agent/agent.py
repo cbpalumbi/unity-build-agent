@@ -4,10 +4,8 @@ import subprocess # For launching listener.py
 import threading  # For the internal Pub/Sub listener thread
 import queue      # For passing messages from internal listener to main agent logic
 import atexit
-from datetime import timedelta
 
 from google.adk.agents import Agent
-from google.cloud import storage # Import Pub/Sub client
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 from .version_control_agent import VERSION_CONTROL_TOOL_FUNCTIONS
@@ -21,24 +19,6 @@ GOOGLE_CLOUD_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
 
 # Define the model for agents
 MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way to reference it
-
-def generate_signed_url(bucket_name: str, blob_name: str, expiration_minutes=60) -> str:
-    """Generates a signed URL for a GCS object valid for expiration_minutes."""
-    if not bucket_name or not blob_name:
-        raise ValueError("Bucket name and blob name must be non-empty.")
-    if expiration_minutes <= 0:
-        raise ValueError("Expiration time must be a positive number.")
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-
-    url = blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(minutes=expiration_minutes),
-        method="GET",
-    )
-    return url
 
 # --- Agent Definitions ---
 class UnityAutomationOrchestrator(Agent):
@@ -107,16 +87,16 @@ class UnityAutomationOrchestrator(Agent):
             """
             return self.get_build_status(build_id=build_id)
         
-        def get_asset_signed_url_tool(build_id: Optional[str] = None) -> str:
-            """
-            Produces a signed url from a Google Cloud Store bucket path.
-            Reports the url.
-            Args:
-                build_id: The build_id for the requested build
-            Returns:
-                signed_url: The signed url where the user can access the asset
-            """
-            return self.get_asset_signed_url(build_id=build_id)
+        # def get_asset_signed_url_tool(build_id: Optional[str] = None) -> str:
+        #     """
+        #     Produces a signed url from a Google Cloud Store bucket path.
+        #     Reports the url.
+        #     Args:
+        #         build_id: The build_id for the requested build
+        #     Returns:
+        #         signed_url: The signed url where the user can access the asset
+        #     """
+        #     return self.get_asset_signed_url(build_id=build_id)
 
         
         # Append this *callable* to the tools list
@@ -126,7 +106,7 @@ class UnityAutomationOrchestrator(Agent):
         if tools is None:
             tools = []
         tools.append(get_build_status_tool) # Add the wrapped function here
-        tools.append(get_asset_signed_url_tool)
+        #tools.append(get_asset_signed_url_tool)
 
         # --- CRITICAL FIX FOR _before_agent_callback ---
         # Create a lambda that captures the 'self' of *this* Orchestrator instance.
@@ -224,38 +204,6 @@ class UnityAutomationOrchestrator(Agent):
         
         # Return a copy to prevent external modification
         return {"all_build_statuses": self.current_build_statuses.copy()}
-
-    def get_asset_signed_url(self, build_id):
-        """
-        Produces a signed url from a Google Cloud Store bucket path
-        Reports the url.
-
-        Args:
-            build_id: The build_id for the requested build
-        Returns:
-            signed_url: The signed url where the user can access the asset
-        """
-        print("get_asset_signed_url called with build_id ", build_id)
-        if build_id:
-            status_info = self.current_build_statuses.get(build_id)
-            if status_info:
-                print("status info ", status_info)
-                if (status_info.get('status', 'unknown') == 'success'):
-                    gcs_full_path = status_info.get('gcs_path', 'N/A')
-                    path_parts = gcs_full_path.replace("gs://", "").split('/', 1) # Split only on the first slash after gs://
-                    bucket_name = path_parts[0]
-                    blob_name = path_parts[1]
-                    signed_url = generate_signed_url(bucket_name, blob_name)
-                    print("Signed url is ", signed_url)
-                    return signed_url
-                else: 
-                    print("LOG: no build status")
-            else:
-                print("LOG: no status info")
-        else: 
-            print("LOG: no build id")
-        
-        return None
         
 
 
@@ -377,7 +325,8 @@ build_orchestration_agent = Agent(
         "1. **Confirm the build request with the user** (branch, commit, build type - test/full). "
         "   Always confirm, as builds can take time and resources.\n"
         "2. **Before publishing any build request, first use the `check_gcs_cache` tool** with the resolved branch and commit. "
-        "   If the `check_gcs_cache` tool returns `True` (meaning the build is already in cache), inform the user that a build is not needed as it's already cached, and conclude the request.\n"
+        "   If the `check_gcs_cache` tool returns `True` (meaning the build is already in cache), inform the user that a build is not needed as it's already cached."
+        "   Then ask the user if they want to generate a signed url for the build. If they say yes, use the get_asset_signed_url tool to generate one and return it to the user\n"
         "3. **If `check_gcs_cache` returns `False`** (not in cache), then **use the `publish_build_request` tool** to initiate a new build. "
         "   Inform the user that the build has been initiated and that it was not found in the cache. "
         "   You are responsible for determining whether the user wants a test build (`is_test_build` should be true) or a full build (`is_test_build` false) for `publish_build_request`.\n"

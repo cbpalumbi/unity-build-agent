@@ -1,7 +1,7 @@
 import json
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from google.cloud import pubsub_v1, storage
@@ -100,7 +100,40 @@ def check_gcs_cache(branch: str, commit: str) -> bool:
         print(f"ERROR: Failed to check GCS cache: {e}")
         return False
     
+def generate_signed_url_for_build(branch: str, commit: str, expiration_minutes: int = 60) -> str:
+    """Generates a signed URL for a specific Unity build artifact in GCS.
+    Use this tool when a user asks for a download link for a cached build,
+    providing the branch and commit hash.
+
+    Args:
+        branch: The Git branch name for the build (e.g., "main").
+        commit: The Git commit hash for the build.
+        expiration_minutes: How long the signed URL should be valid for (in minutes). Defaults to 60.
+    Returns:
+        str: The signed URL, or an error message if generation fails.
+    """
+    if not GCS_BUILD_BUCKET_NAME:
+        return "Error: GCS_BUILD_BUCKET_NAME environment variable not set. Cannot generate URL."
+
+    print(f"[GCS Tool] Generating signed URL for build on {branch}/{commit}...")
+    try:
+        bucket = storage_client.bucket(GCS_BUILD_BUCKET_NAME)
+        # Use the helper to construct the full blob path
+        blob_name = _get_build_object_path(branch, commit)
+        blob = bucket.blob(blob_name)
+
+        if not blob.exists():
+            return f"Error: Build artifact '{blob_name}' not found in cache. Cannot generate URL."
+
+        expiration_time = datetime.now(tz=timezone.utc) + timedelta(minutes=expiration_minutes)
+        url = blob.generate_signed_url(expiration=expiration_time)
+        print(f"[GCS Tool] Generated signed URL (valid for {expiration_minutes} min): {url}")
+        return url
+    except Exception as e:
+        return f"Error generating signed URL: {e}"
+    
 BUILD_AGENT_TOOL_FUNCTIONS = [
     publish_build_request,
-    check_gcs_cache
+    check_gcs_cache,
+    generate_signed_url_for_build
 ]
