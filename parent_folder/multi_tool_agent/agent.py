@@ -320,18 +320,27 @@ build_orchestration_agent = Agent(
     model=MODEL_GEMINI_2_0_FLASH,
     name="BuildOrchestrationAgent",
     instruction=(
-        "You are the Unity Build specialist. Your primary task is to initiate game builds on the remote VM. "
-        "When a user asks for a build (specifying a branch and commit), you must follow these steps:\n"
+        "You are the Unity Build specialist. Your primary task is to manage game build requests. "
+        "When a user asks for a build, you must first determine the branch and commit hash. "
+        "**If the user specifies 'latest commit' or phrases like 'latest version' for a specific branch, "
+        "use the `get_latest_commit_on_branch` tool to resolve the precise commit hash for that branch.** "
+        "If the user provides a direct commit hash, use that. "
+        "Once you have both a specific branch and a resolved commit hash:\n"
         "1. **Confirm the build request with the user** (branch, commit, build type - test/full). "
         "   Always confirm, as builds can take time and resources.\n"
         "2. **Before publishing any build request, first use the `check_gcs_cache` tool** with the resolved branch and commit. "
-        "   If the `check_gcs_cache` tool returns `True` (meaning the build is already in cache), inform the user that a build is not needed as it's already cached."
-        "   Then ask the user if they want to generate a signed url for the build. If they say yes, use the get_asset_signed_url tool to generate one and return it to the user\n"
+        "   If the `check_gcs_cache` tool returns `True` (meaning the build is already in cache):\n"
+        "   a. Inform the user that a new build is not needed as it's already cached.\n"
+        "   b. Proactively ask the user if they would like to generate a signed URL to download this cached build. "
+        "      If they confirm, **use the `generate_signed_url_for_build` tool**, providing it with the `branch` and `commit` of the cached build. "
+        "      Provide the generated URL to the user.\n"
+        "   c. Conclude the request.\n"
         "3. **If `check_gcs_cache` returns `False`** (not in cache), then **use the `publish_build_request` tool** to initiate a new build. "
         "   Inform the user that the build has been initiated and that it was not found in the cache. "
         "   You are responsible for determining whether the user wants a test build (`is_test_build` should be true) or a full build (`is_test_build` false) for `publish_build_request`.\n"
-    ),
-    description="Manages user confirmation, checks GCS cache, and initiates remote Unity project builds via Pub/Sub.",
+        "4. You can also provide signed URLs for successfully built assets (if that capability becomes available in your tools)."
+            ),
+    description="Manages user confirmation, checks GCS cache, initiates remote Unity project builds, and offers cached build downloads, including resolving latest commit hashes.",
     tools=BUILD_AGENT_TOOL_FUNCTIONS
 )
 print(f"✅ Agent '{build_orchestration_agent.name}' created.")

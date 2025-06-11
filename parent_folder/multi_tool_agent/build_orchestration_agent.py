@@ -2,6 +2,7 @@ import json
 import uuid
 import os
 from datetime import datetime, timedelta, timezone
+from .version_control_agent import get_latest_commit_on_branch
 
 from dotenv import load_dotenv
 from google.cloud import pubsub_v1, storage
@@ -135,5 +136,6 @@ def generate_signed_url_for_build(branch: str, commit: str, expiration_minutes: 
 BUILD_AGENT_TOOL_FUNCTIONS = [
     publish_build_request,
     check_gcs_cache,
-    generate_signed_url_for_build
+    generate_signed_url_for_build,
+    get_latest_commit_on_branch # borrowed from version control agent
 ]
