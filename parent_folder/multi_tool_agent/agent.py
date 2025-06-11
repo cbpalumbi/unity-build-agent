@@ -485,13 +485,16 @@ if build_orchestration_agent:
                 "'is build X complete?', 'tell me about recent builds'), "
                 "you MUST use your 'get_build_status_tool' to retrieve and provide that information.** "
                 "Do NOT delegate build status questions to any sub-agent.\n" # Direct instruction for status
+                "2. 'Version Control Agent': Handles determining which branch and commit the user in interested in."
+                "If the user asks about building without specifying a particular commit and branch, delegate"
+                "to the Version Control Agent for resolution."
                 "If a request doesn't fall into these categories, state that you cannot handle it."
             ),
             tools=[], # Leave this empty because the stateful tools are added manually on init
             sub_agents=[build_orchestration_agent, version_control_agent], # Pass your sub-agent instance here
         )
         agent = root_agent # needs a duplicate variable for pytest. don't worry about it
-        print(f"✅ Root Agent '{root_agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
+        print(f"✅ Root Agent '{root_agent.name}' created.")
     except Exception as e:
         print(f"❌ Could not create Root Unity Agent. Error: {e}")
     
