@@ -1,25 +1,23 @@
 import os
 import json
-import uuid
 import subprocess # For launching listener.py
 import threading  # For the internal Pub/Sub listener thread
 import queue      # For passing messages from internal listener to main agent logic
 import atexit
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from google.adk.agents import Agent
-from google.cloud import pubsub_v1, storage # Import Pub/Sub client
+from google.cloud import storage # Import Pub/Sub client
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 from .version_control_agent import VERSION_CONTROL_TOOL_FUNCTIONS
+from .build_orchestration_agent import BUILD_AGENT_TOOL_FUNCTIONS
 
 load_dotenv() # Load environment variables from .env file
 
 # --- Configuration for Google Cloud ---
 # IMPORTANT: Replace with your actual Project ID and Topic ID
-GOOGLE_CLOUD_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "cool-ruler-461702-p8")
-# Confirm this topic ID in your GCP Console. It's the topic your VM's Pub/Sub subscription listens to.
-UNITY_BUILD_PUB_SUB_TOPIC_ID = os.getenv("UNITY_BUILD_PUB_SUB_TOPIC_ID", "unity-build-trigger-topic")
+GOOGLE_CLOUD_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
 
 # Define the model for agents
 MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way to reference it
@@ -41,58 +39,6 @@ def generate_signed_url(bucket_name: str, blob_name: str, expiration_minutes=60)
         method="GET",
     )
     return url
-
-# --- Pub/Sub Publisher Tool (used by BuildOrchestrationAgent) ---
-
-def publish_build_request(
-    command: str,
-    branch_name: str,
-    commit_hash: str,
-    is_test_build: bool,
-) -> dict:
-    """Publishes a build request message to the Google Cloud Pub/Sub topic.
-
-    This function is intended to be used as a tool by the BuildOrchestrationAgent. 
-    It does not report build or request ids to the user.
-
-    Args:
-        command (str): The primary command for the VM (e.g., "start_build", "checkout_and_build").
-        branch_name (str): The Git branch name to build from.
-        commit_hash (str): The specific Git commit hash (full SHA preferred).
-        is_test_build (bool): If True, indicates a test build (no actual Unity build).
-
-    Returns:
-        dict: Status and message or error details.
-    """
-    publisher = pubsub_v1.PublisherClient()
-    topic_path = publisher.topic_path(GOOGLE_CLOUD_PROJECT_ID, UNITY_BUILD_PUB_SUB_TOPIC_ID)
-
-    build_id = str(uuid.uuid4()) # unique hash for this build request
-
-    # Create a structured dictionary for the payload
-    message_data = {
-        "build_id": build_id, 
-        "command": command,
-        "branch_name": branch_name,
-        "commit_hash": commit_hash,
-        "is_test_build": is_test_build,
-        "request_timestamp": datetime.now().isoformat(), # Add timestamp for logging/tracking
-    }
-
-    # Encode the dictionary to a JSON string, then to bytes
-    data_bytes = json.dumps(message_data).encode('utf-8')
-    attributes = {}
-
-    try:
-        print(f"--- Tool: publish_build_request for build_id: '{build_id}' ---")
-        print(f"Payload: {json.dumps(message_data, indent=2)}") # For better logging
-        future = publisher.publish(topic_path, data=data_bytes, **attributes)
-        message_id = future.result()
-        print(f"SUCCESS: Published message with Pub/Sub message ID: {message_id}")
-        return {"status": "success", "build_id": build_id, "message_id": message_id}
-    except Exception as e:
-        print(f"ERROR: Failed to publish message: {e}")
-        return {"status": "error", "message": str(e)}
 
 # --- Agent Definitions ---
 class UnityAutomationOrchestrator(Agent):
@@ -426,17 +372,18 @@ build_orchestration_agent = Agent(
     model=MODEL_GEMINI_2_0_FLASH,
     name="BuildOrchestrationAgent",
     instruction=(
-        "You are the Unity Build specialist. Your ONLY task is to trigger full game builds "
-        "on the remote VM via Google Cloud Pub/Sub. "
-        "Use the 'publish_build_request' tool to initiate a build on the remote VM. "
-        "Always confirm with the user before publishing a new build request, as it can take time. "
-        "Once a build request is published, inform the user that the build has been initiated. "
-        "You are responsible for formulating the correct message payload for 'publish_build_request'"
-        "You should determine whether the user wants a test build (nobuild should be true) or a full build (no build false)"
-        "You can also provide signed urls for succesfully build assets."
+        "You are the Unity Build specialist. Your primary task is to initiate game builds on the remote VM. "
+        "When a user asks for a build (specifying a branch and commit), you must follow these steps:\n"
+        "1. **Confirm the build request with the user** (branch, commit, build type - test/full). "
+        "   Always confirm, as builds can take time and resources.\n"
+        "2. **Before publishing any build request, first use the `check_gcs_cache` tool** with the resolved branch and commit. "
+        "   If the `check_gcs_cache` tool returns `True` (meaning the build is already in cache), inform the user that a build is not needed as it's already cached, and conclude the request.\n"
+        "3. **If `check_gcs_cache` returns `False`** (not in cache), then **use the `publish_build_request` tool** to initiate a new build. "
+        "   Inform the user that the build has been initiated and that it was not found in the cache. "
+        "   You are responsible for determining whether the user wants a test build (`is_test_build` should be true) or a full build (`is_test_build` false) for `publish_build_request`.\n"
     ),
-    description="Manages triggering remote Unity project builds via Pub/Sub.",
-    tools=[publish_build_request] # Only the publishing tool here
+    description="Manages user confirmation, checks GCS cache, and initiates remote Unity project builds via Pub/Sub.",
+    tools=BUILD_AGENT_TOOL_FUNCTIONS
 )
 print(f"✅ Agent '{build_orchestration_agent.name}' created.")
 
