@@ -11,6 +11,7 @@ from google.adk.agents import Agent
 from google.cloud import pubsub_v1, storage # Import Pub/Sub client
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
+from .version_control_agent import VERSION_CONTROL_TOOL_FUNCTIONS
 
 load_dotenv() # Load environment variables from .env file
 
@@ -439,6 +440,24 @@ build_orchestration_agent = Agent(
 )
 print(f"✅ Agent '{build_orchestration_agent.name}' created.")
 
+# Version Control Agent
+version_control_agent = Agent(
+    model=MODEL_GEMINI_2_0_FLASH, 
+    name="VersionControlAgent",
+    instruction=(
+        "You are a Git Version Control Specialist. "
+        "Your primary task is to assist the user with all queries related to Git branches, commits, and users. "
+        "Use your specialized tools (`resolve_branch_name`, `get_latest_commit_on_branch`, `resolve_git_user`, `get_commit_details`, `list_available_branches`, `list_recent_commits_on_branch`) "
+        "to accurately answer questions about Git history, branch status, and specific commits. "
+        "Always aim to provide precise and helpful information based on the Git repository data. "
+        "If a user asks to 'build' something, you should resolve the specific branch and commit details first, "
+        "and then inform the user that you have the necessary information." # This part will be crucial for OrchestratorRootAgent delegation.
+    ),
+    description="Specializes in resolving Git branches, commits, and users, and providing Git history information.",
+    tools=VERSION_CONTROL_TOOL_FUNCTIONS 
+)
+print(f"✅ Agent '{version_control_agent.name}' created.")
+
 # --- Root Unity Automation Orchestrator Agent ---
 root_agent = None
 agent = root_agent # needs a duplicate variable for pytest 
@@ -469,7 +488,7 @@ if build_orchestration_agent:
                 "If a request doesn't fall into these categories, state that you cannot handle it."
             ),
             tools=[], # Leave this empty because the stateful tools are added manually on init
-            sub_agents=[build_orchestration_agent], # Pass your sub-agent instance here
+            sub_agents=[build_orchestration_agent, version_control_agent], # Pass your sub-agent instance here
         )
         agent = root_agent # needs a duplicate variable for pytest. don't worry about it
         print(f"✅ Root Agent '{root_agent.name}' created with sub-agent: '{build_orchestration_agent.name}'.")
