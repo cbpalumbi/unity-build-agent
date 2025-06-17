@@ -26,28 +26,16 @@ class UnityAutomationOrchestrator(Agent):
     The central agent for Unity game development automation.
     This agent orchestrates various tasks related to Unity builds and management.
     """
-    # --- Pydantic Field Declarations for internal state ---
-    # These must be declared as fields if you want them managed by Pydantic
-    # and passed in kwargs to the __init__ or have default values.
-    # For types like queue.Queue, subprocess.Popen, threading.Event,
-    # Pydantic cannot easily validate them, so they typically require
-    # model_config = {"arbitrary_types_allowed": True}
 
-    build_status_queue: queue.Queue # Queue for raw JSON from subprocess stdout
     listener_process: Optional[subprocess.Popen] = None # subprocess.Popen object
+    listener_stderr_file_handle: Optional[Any] = None # File handle for listener's stderr
     stdout_reader_thread: Optional[threading.Thread] = None # Thread reading from subprocess stdout
     _stop_event: threading.Event # Signal for graceful thread shutdown
-    current_build_statuses: Dict[str, Dict[str, Any]] = {} # Dictionary to store latest build statuses
-    listener_stderr_file_handle: Optional[Any] = None # File handle for listener's stderr
+    
+    build_status_queue: queue.Queue # Queue for raw JSON from subprocess stdout
+    current_build_statuses: Dict[str, Dict[str, Any]] # Use commit hash as the primary key
 
-    # Agents are also Pydantic fields if they are passed during initialization
-    # and managed by the BaseAgent's Pydantic structure.
-    # In your case, you pass 'sub_agents' as a list to the super().__init__,
-    # so they might not need to be explicitly declared *here* unless they
-    # are intended to be directly accessible as `self.build_orchestration_agent`
-    # and validated by Pydantic. For now, let's assume `sub_agents` list is enough.
-
-    # This is CRUCIAL for arbitrary types like queue.Queue, threading.Event, subprocess.Popen
+    # Needed for pydantic to not complain
     model_config = {"arbitrary_types_allowed": True}
 
     def __init__(
@@ -67,7 +55,6 @@ class UnityAutomationOrchestrator(Agent):
         # or which have a specific initial state (e.g., empty queue, unset event).
         # These are then passed to super().__init__ as kwargs so Pydantic assigns them.
         initial_build_status_queue = queue.Queue()
-        initial_stop_event = threading.Event()
         initial_current_build_statuses = {}
 
         if tools is None: tools = []
@@ -87,6 +74,7 @@ class UnityAutomationOrchestrator(Agent):
             """
             return self.get_build_status(build_id=build_id)
         
+        # Wrapper for get_asset_signed_url, imported from build orchestration agent
         def get_asset_signed_url_tool(branch: str, commit: str,) -> str:
             """
             Produces a signed url from a Google Cloud Store bucket path.
@@ -156,19 +144,30 @@ class UnityAutomationOrchestrator(Agent):
         print(f"Tool 'get_build_status_tool' called. Processing pending queue updates...")
 
         # --- Step 1: Process ALL pending updates from the internal build_status_queue ---
+        
+        # $completionPayload = @{
+        #         session_id = "placeholder"
+        #         commit = $commitHash
+        #         branch = $branchName
+        #         status = "success"
+        #         is_test_build = $isTestBuild
+        #         gcs_path = $finalGcsPath
+        #         timestamp = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
+        #         build_id = $receivedBuildId
+        #     }
+
         updates_applied = 0
         while not self.build_status_queue.empty():
             try:
                 notification = self.build_status_queue.get_nowait()
-                b_id = notification.get('build_id')
-                if b_id:
+                commit_hash = notification.get('commit')
+                if commit_hash:
                     # Update the orchestrator's internal dictionary with the latest status
-                    self.current_build_statuses[b_id] = notification
-                    self.current_build_statuses[b_id]['status'] = "success"
+                    self.current_build_statuses[commit_hash] = notification
                     updates_applied += 1
-                    print(f"  Processed update for build ID: {b_id}, Status: {notification.get('status', 'N/A')}")
+                    print(f"  Processed update for commit: {commit_hash}, Status: {notification.get('status', 'N/A')}")
                 else:
-                    print("Update from queue is missing build id.")
+                    print("Update from queue is missing commit.")
                 # Optionally, you can add a small sleep to prevent busy-waiting
                 # if the queue might be populated very rapidly, though get_nowait()
                 # handles the empty case immediately.
