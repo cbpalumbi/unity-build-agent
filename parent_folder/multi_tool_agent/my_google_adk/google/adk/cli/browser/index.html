@@ -37,7 +37,7 @@
       const res = await fetch('/api/build-statuses');
       if (!res.ok) throw new Error('Failed to fetch build statuses');
       const data = await res.json();
-      const container = document.getElementById('build-statuses');
+      const container = document.getElementById('custom-build-status');
       container.innerHTML = '';
       console.log("data", data)
       for (const [commit, info] of Object.entries(data)) {

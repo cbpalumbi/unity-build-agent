@@ -31,7 +31,7 @@ from fastapi import FastAPI, APIRouter
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -280,7 +280,7 @@ def get_fast_api_app(
   @app.get("/api/build-statuses")
   async def get_build_statuses():
     runner = await _get_runner_async("multi_tool_agent")
-    return runner.agent.current_build_statuses
+    return JSONResponse(content=runner.agent.current_build_statuses.copy())
 
   @app.get("/list-apps")
   def list_apps() -> list[str]:

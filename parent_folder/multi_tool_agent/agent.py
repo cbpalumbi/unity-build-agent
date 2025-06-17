@@ -146,54 +146,11 @@ class UnityAutomationOrchestrator(Agent):
             requestedCommit: the user can optionally request the build status of a specific commit
         Returns:
             dict: A dictionary containing the status of the requested build(s).
-        """
-        print(f"Tool 'get_build_status_tool' called. Processing pending queue updates...")
-
-        # --- Step 1: Process ALL pending updates from the internal build_status_queue ---
-        
-        # $completionPayload = @{
-        #         session_id = "placeholder"
-        #         commit = $commitHash
-        #         branch = $branchName
-        #         status = "success"
-        #         is_test_build = $isTestBuild
-        #         gcs_path = $finalGcsPath
-        #         timestamp = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
-        #         build_id = $receivedBuildId
-        #     }
-
-        updates_applied = 0
-        while not self.build_status_queue.empty():
-            try:
-                notification = self.build_status_queue.get_nowait()
-                commit_hash = notification.get('commit')
-                if commit_hash:
-                    # Update the orchestrator's internal dictionary with the latest status
-                    self.current_build_statuses[commit_hash] = notification
-                    updates_applied += 1
-                    print(f"  Processed update for commit: {commit_hash}, Status: {notification.get('status', 'N/A')}")
-                else:
-                    print("Update from queue is missing commit.")
-                # Optionally, you can add a small sleep to prevent busy-waiting
-                # if the queue might be populated very rapidly, though get_nowait()
-                # handles the empty case immediately.
-                # await asyncio.sleep(0.01) # Small non-blocking sleep if needed
-            except queue.Empty:
-                # This should ideally not be hit with get_nowait() after checking .empty()
-                break
-            except Exception as e:
-                print(f"  Error processing item from build_status_queue: {e}")
-                # Consider putting the item back or logging the error detail
-                
-        if updates_applied > 0:
-            print(f"Successfully applied {updates_applied} new build status updates from the queue.")
-        else:
-            print("No new build status updates were pending in the queue.")
-
-        if not self.current_build_statuses:
+        """ 
+        if not self.current_build_statuses or len(self.current_build_statuses) == 0:
             return {"message": "No build status information available."}
 
-        # --- Step 2: Retrieve status from the (now updated) current_build_statuses dictionary ---
+        # --- Retrieve status from the current_build_statuses dictionary ---
         if isinstance(requestedCommit, str) and requestedCommit.strip():
             status_info = self.current_build_statuses.get(requestedCommit)
             if status_info:
@@ -268,6 +225,18 @@ class UnityAutomationOrchestrator(Agent):
         Continuously reads lines from the listener.py's stdout, parses them as JSON,
         and places them into self.build_status_queue. This runs in a separate thread.
         """
+
+        # $completionPayload = @{
+        #         session_id = "placeholder"
+        #         commit = $commitHash
+        #         branch = $branchName
+        #         status = "success"
+        #         is_test_build = $isTestBuild
+        #         gcs_path = $finalGcsPath
+        #         timestamp = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
+        #         build_id = $receivedBuildId
+        #     }
+
         if not self.listener_process or not self.listener_process.stdout:
             print("Listener process or its stdout not initialized. Cannot read stdout.")
             return
@@ -281,9 +250,15 @@ class UnityAutomationOrchestrator(Agent):
                     if line: # Ensure the line is not empty after stripping
                         print(f"[Listener STDOUT]: {line}") # For debugging
                         try:
-                            notification = json.loads(line) # TODO: verify type and stuff 
-                            self.build_status_queue.put(notification)
-                            print(f"Your build may have finished. Try asking about its status. Item was added to build queue")
+                            notification = json.loads(line) # TODO: verify type etc
+                            commit_hash = notification.get('commit')
+                            if commit_hash:
+                                # Update the orchestrator's internal dictionary with the latest status
+                                self.current_build_statuses[commit_hash] = notification
+                                print(f"  Processed update for commit: {commit_hash}, Status: {notification.get('status', 'N/A')}")
+                            else:
+                                print("Build status notif is missing commit hash")
+
                         except json.JSONDecodeError as e:
                             print(f"Failed to decode JSON from listener stdout: {line} - Error: {e}")
                 else:
@@ -356,6 +331,7 @@ build_orchestration_agent = Agent(
         "- If the tool returns `True`, inform the user that the build is already cached.\n"
         "  - Offer to generate a signed URL by asking the user if they want to download it.\n"
         "  - If they say yes, use `generate_signed_url_for_build` and return the link.\n"
+        "  - If they say to rebuild it anyway, use the `publish_build_request` tool with the correct `branch`, `commit`, and `is_test_build` values.\n"
         "- **If the tool returns `False` (cache miss)**, explicitly say:\n"
         "  - 'This build is not cached. I will now trigger a new build.'\n"
         "  - Then, use the `publish_build_request` tool with the correct `branch`, `commit`, and `is_test_build` values.\n"
