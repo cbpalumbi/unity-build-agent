@@ -1,0 +1,6 @@
+setup.py
+google_adk.egg-info/PKG-INFO
+google_adk.egg-info/SOURCES.txt
+google_adk.egg-info/dependency_links.txt
+google_adk.egg-info/entry_points.txt
+google_adk.egg-info/top_level.txt
