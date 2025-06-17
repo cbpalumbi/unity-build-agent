@@ -9,7 +9,7 @@ from google.adk.agents import Agent
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 from .version_control_agent import VERSION_CONTROL_TOOL_FUNCTIONS
-from .build_orchestration_agent import BUILD_AGENT_TOOL_FUNCTIONS
+from .build_orchestration_agent import BUILD_AGENT_TOOL_FUNCTIONS, generate_signed_url_for_build
 
 load_dotenv() # Load environment variables from .env file
 
@@ -87,16 +87,16 @@ class UnityAutomationOrchestrator(Agent):
             """
             return self.get_build_status(build_id=build_id)
         
-        # def get_asset_signed_url_tool(build_id: Optional[str] = None) -> str:
-        #     """
-        #     Produces a signed url from a Google Cloud Store bucket path.
-        #     Reports the url.
-        #     Args:
-        #         build_id: The build_id for the requested build
-        #     Returns:
-        #         signed_url: The signed url where the user can access the asset
-        #     """
-        #     return self.get_asset_signed_url(build_id=build_id)
+        def get_asset_signed_url_tool(branch: str, commit: str,) -> str:
+            """
+            Produces a signed url from a Google Cloud Store bucket path.
+            Reports the url.
+            Args:
+                build_id: The build_id for the requested build
+            Returns:
+                signed_url: The signed url where the user can access the asset
+            """
+            return generate_signed_url_for_build(branch, commit)
 
         
         # Append this *callable* to the tools list
@@ -106,7 +106,7 @@ class UnityAutomationOrchestrator(Agent):
         if tools is None:
             tools = []
         tools.append(get_build_status_tool) # Add the wrapped function here
-        #tools.append(get_asset_signed_url_tool)
+        tools.append(get_asset_signed_url_tool)
 
         # --- CRITICAL FIX FOR _before_agent_callback ---
         # Create a lambda that captures the 'self' of *this* Orchestrator instance.
@@ -320,26 +320,31 @@ build_orchestration_agent = Agent(
     model=MODEL_GEMINI_2_0_FLASH,
     name="BuildOrchestrationAgent",
     instruction=(
-        "You are the Unity Build specialist. Your primary task is to manage game build requests. "
-        "When a user asks for a build, you must first determine the branch and commit hash. "
-        "**If the user specifies 'latest commit' or phrases like 'latest version' for a specific branch, "
-        "use the `get_latest_commit_on_branch` tool to resolve the precise commit hash for that branch.** "
-        "If the user provides a direct commit hash, use that. "
-        "Once you have both a specific branch and a resolved commit hash:\n"
-        "1. **Confirm the build request with the user** (branch, commit, build type - test/full). "
-        "   Always confirm, as builds can take time and resources.\n"
-        "2. **Before publishing any build request, first use the `check_gcs_cache` tool** with the resolved branch and commit. "
-        "   If the `check_gcs_cache` tool returns `True` (meaning the build is already in cache):\n"
-        "   a. Inform the user that a new build is not needed as it's already cached.\n"
-        "   b. Proactively ask the user if they would like to generate a signed URL to download this cached build. "
-        "      If they confirm, **use the `generate_signed_url_for_build` tool**, providing it with the `branch` and `commit` of the cached build. "
-        "      Provide the generated URL to the user.\n"
-        "   c. Conclude the request.\n"
-        "3. **If `check_gcs_cache` returns `False`** (not in cache), then **use the `publish_build_request` tool** to initiate a new build. "
-        "   Inform the user that the build has been initiated and that it was not found in the cache. "
-        "   You are responsible for determining whether the user wants a test build (`is_test_build` should be true) or a full build (`is_test_build` false) for `publish_build_request`.\n"
-        "4. You can also provide signed URLs for successfully built assets (if that capability becomes available in your tools)."
-            ),
+        "You are the Unity Build specialist. Your role is to manage build requests for the Unity project.\n\n"
+        "When a user asks to build the game, follow this structured process:\n\n"
+        "1. **Determine the branch and commit hash**:\n"
+        "- If the user says 'latest commit' or 'latest version' for a branch, use the `get_latest_commit_on_branch` tool to resolve it.\n"
+        "- If the user gives a direct commit hash, use it as-is.\n\n"
+        "2. **Clarify build type**:\n"
+        "- Use context to determine if the user wants a 'test build' or 'full build'.\n"
+        "- You must set the `is_test_build` field appropriately when initiating builds.\n\n"
+        "3. **Confirm with the user before building**:\n"
+        "- Once you know the branch, commit, and build type, confirm the request.\n"
+        "- Say something like: 'Just to confirm, you want to build the game on branch `X`, commit `Y`, as a [test/full] build?' \n"
+        "- Wait for user confirmation before continuing.\n\n"
+        "4. **Check the cache**:\n"
+        "- Use the `check_gcs_cache` tool with the confirmed branch and commit.\n"
+        "- If the tool returns `True`, inform the user that the build is already cached.\n"
+        "  - Offer to generate a signed URL by asking the user if they want to download it.\n"
+        "  - If they say yes, use `generate_signed_url_for_build` and return the link.\n"
+        "- **If the tool returns `False` (cache miss)**, explicitly say:\n"
+        "  - 'This build is not cached. I will now trigger a new build.'\n"
+        "  - Then, use the `publish_build_request` tool with the correct `branch`, `commit`, and `is_test_build` values.\n"
+        "  - Inform the user that the build is in progress and may take several minutes.\n\n"
+        "5. When a user later asks about build status:\n"
+        "- You will NOT handle that — the root UnityOrchestrationAgent handles status tracking and signed URL generation once builds are complete.\n\n"
+        "Remember: never trigger a build without confirmation and cache check. Never offer a signed URL unless the build is complete or already cached."
+    ),
     description="Manages user confirmation, checks GCS cache, initiates remote Unity project builds, and offers cached build downloads, including resolving latest commit hashes.",
     tools=BUILD_AGENT_TOOL_FUNCTIONS
 )
@@ -379,21 +384,29 @@ if build_orchestration_agent:
                 "managing them, and providing **real-time build status updates**." # Emphasize status here
             ),
             instruction=(
-                "You are the main Unity Automation Orchestrator. Your primary role is to understand "
-                "the user's request related to Unity game development and delegate it "
-                "to the most appropriate specialized sub-agent, or answer it directly using your tools.\n"
-                "You have the following specialized sub-agents: \n"
-                "1. 'BuildOrchestrationAgent': Handles **only triggering remote Unity builds** via Pub/Sub. "
-                "**It CANNOT check build status.**\n\n" # Explicitly state its limitation
-                "**If the user asks to build the game, clearly and precisely delegate to the 'BuildOrchestrationAgent'.**\n"
-                "**If the user asks about the status of any build (e.g., 'what is the status of the build queue', "
-                "'is build X complete?', 'tell me about recent builds'), "
-                "you MUST use your 'get_build_status_tool' to retrieve and provide that information.** "
-                "Do NOT delegate build status questions to any sub-agent.\n" # Direct instruction for status
-                "2. 'Version Control Agent': Handles determining which branch and commit the user in interested in."
-                "If the user asks about building without specifying a particular commit and branch, delegate"
-                "to the Version Control Agent for resolution."
-                "If a request doesn't fall into these categories, state that you cannot handle it."
+                "You are the main Unity Automation Orchestrator. Your role is to understand and coordinate the user's "
+                "Unity game development requests. You may either:\n"
+                "- Delegate tasks to the appropriate sub-agent\n"
+                "- Handle the request directly using your available tools\n\n"
+
+                "You have the following sub-agents:\n"
+                "1. **BuildOrchestrationAgent**: Handles triggering new remote Unity builds via Pub/Sub.\n"
+                "   - This agent **CANNOT check build status**, generate signed URLs, or answer questions about existing builds.\n"
+                "   - If the user asks to build the game, clearly and precisely delegate to the BuildOrchestrationAgent.\n\n"
+
+                "2. **VersionControlAgent**: Handles resolving ambiguous or natural language references to branches and commits.\n"
+                "   - If a user requests a build but doesn’t specify both a branch and a commit, delegate to this agent first.\n\n"
+
+                "If a request doesn’t fall into these categories, explain that you cannot handle it.\n\n"
+
+                "**You must handle build status questions directly.**\n"
+                "- If the user asks: 'what is the status of the build queue', 'is build X complete?', 'did my build finish?', "
+                "'is the test build done?' — use the `get_build_status_tool` to retrieve the current status.\n"
+                "- If the build is complete, offer to generate a download link.\n"
+                "- Ask: 'Would you like a signed URL to download this build?'\n"
+                "- If the user says yes, use the `get_asset_signed_url_tool` to retrieve the signed URL and share it.\n\n"
+
+                "Your job is to be helpful, accurate, and clear in guiding the user through automated Unity workflows."
             ),
             tools=[], # Leave this empty because the stateful tools are added manually on init
             sub_agents=[build_orchestration_agent, version_control_agent], # Pass your sub-agent instance here
