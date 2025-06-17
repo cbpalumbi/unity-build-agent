@@ -4,6 +4,7 @@ import subprocess # For launching listener.py
 import threading  # For the internal Pub/Sub listener thread
 import queue      # For passing messages from internal listener to main agent logic
 import atexit
+import datetime
 
 from google.adk.agents import Agent
 from dotenv import load_dotenv
@@ -19,8 +20,6 @@ GOOGLE_CLOUD_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
 
 # Define the model for agents
 MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way to reference it
-
-global_orchestrator_instance = None  # type: UnityAutomationOrchestrator | None
 
 # --- Agent Definitions ---
 class UnityAutomationOrchestrator(Agent):
@@ -54,8 +53,7 @@ class UnityAutomationOrchestrator(Agent):
         Initializes the UnityAutomationOrchestrator.
         """
 
-        global global_orchestrator_instance
-        global_orchestrator_instance = self
+        print(f"Orchestrator ID: {id(self)}")  # in tool
         
         # Initialize the complex objects that Pydantic can't construct directly
         # or which have a specific initial state (e.g., empty queue, unset event).
@@ -72,6 +70,8 @@ class UnityAutomationOrchestrator(Agent):
         def get_build_status_tool(requestedCommit: Optional[str] = None) -> dict:
             """
             Retrieves the most recent build status. Ex: 'nobuild', 'success', 'failed'.
+            If the user specifies a commit, look for that build. If not, look for the
+            latest build they triggered. 
             
             Args:
                 requestedCommit: optional, to ask for a certain commit's status
@@ -190,22 +190,41 @@ class UnityAutomationOrchestrator(Agent):
         else:
             print("No new build status updates were pending in the queue.")
 
+        if not self.current_build_statuses:
+            return {"message": "No build status information available."}
+
         # --- Step 2: Retrieve status from the (now updated) current_build_statuses dictionary ---
-        if requestedCommit:
+        if isinstance(requestedCommit, str) and requestedCommit.strip():
             status_info = self.current_build_statuses.get(requestedCommit)
             if status_info:
                 return {
                     "status": status_info.get('status', 'unknown'),
                 }
-            # If no build_id is found after processing updates
             return {"requestedCommit": requestedCommit, "status": "not_found", "message": f"Build for commit '{requestedCommit}' status not found or not yet processed."}
-        
-        if not self.current_build_statuses:
-            return {"message": "No build status information available."}
-        
-        # If no commit was provided, return all known statuses
-        return {"all_build_statuses": self.current_build_statuses.copy()}
+        else: 
+            # Find latest build by timestamp
+            latest_commit = None
+            latest_timestamp = None
+            for commit, info in self.current_build_statuses.items():
+                timestamp_str = info.get('timestamp')
+                if timestamp_str:
+                    try:
+                        timestamp = datetime.datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        if latest_timestamp is None or timestamp > latest_timestamp:
+                            latest_timestamp = timestamp
+                            latest_commit = commit
+                    except Exception as e:
+                        print(f"Warning: Could not parse timestamp for commit {commit}: {e}")
 
+            if latest_commit is None:
+                return {"message": "No valid timestamp found for builds."}
+
+            # Return status for latest commit
+            status_info = self.current_build_statuses.get(latest_commit)
+            return {
+                "commit": latest_commit,
+                "status": status_info.get('status', 'unknown'),
+            }
 
     def start_external_listener_subprocess(self):
         """
@@ -381,7 +400,7 @@ if build_orchestration_agent and version_control_agent:
             description=(
                 "The central agent for Unity game development automation. "
                 "I understand user requests related to building Unity game versions, "
-                "managing them, and providing **real-time build status updates**." # Emphasize status here
+                "managing them, and providing **build status updates**." # Emphasize status here
             ),
             instruction=(
                 "You are the main Unity Automation Orchestrator. Your role is to understand and coordinate the user's "
@@ -397,22 +416,24 @@ if build_orchestration_agent and version_control_agent:
                 "2. **VersionControlAgent**: Handles resolving ambiguous or natural language references to branches and commits.\n"
                 "   - If a user requests a build but doesn’t specify both a branch and a commit, delegate to this agent first.\n\n"
 
-                "If a request doesn’t fall into these categories, explain that you cannot handle it.\n\n"
-
-                "**You must handle build status questions directly.**\n"
-                "- If the user asks: 'what is the status of the build queue', 'is build X complete?', 'did my build finish?', "
-                "'is the test build done?' — use the `get_build_status_tool` to retrieve the current status.\n"
-                "- If the build is complete, offer to generate a download link.\n"
-                "- Ask: 'Would you like a signed URL to download this build?'\n"
-                "- If the user says yes, use the `get_asset_signed_url_tool` to retrieve the signed URL and share it.\n\n"
-
+                "You must handle build status questions directly."
+                "- If the user asks about build statuses with phrases like:"
+                "what is the status of the build queue, is build X complete?, did my build finish?, is the test build done?"
+                "or similar, always call the `get_build_status_tool` to get the latest information."
+                "- If the user does NOT specify a commit hash, treat the request as about the *most recent build*."
+                "- If the build status is success or complete, offer the user a signed URL to download the build by asking:"
+                "Would you like a signed URL to download this build?"
+                "- If the user says yes, call the `get_asset_signed_url_tool` with the corresponding commit/build ID, and share the signed URL in your response."
+                "- If the build status is not complete, inform the user politely that the build is still in progress or not found."
                 "Your job is to be helpful, accurate, and clear in guiding the user through automated Unity workflows."
+
+                "If a request doesn’t fall into these categories, explain that you cannot handle it.\n\n"
             ),
             tools=[], # Leave this empty because the stateful tools are added manually on init
             sub_agents=[build_orchestration_agent, version_control_agent], # Pass your sub-agent instance here
         )
         agent = root_agent # needs a duplicate variable for pytest. don't worry about it
-        
+
         print(f"✅ Root Agent '{root_agent.name}' created.")
     except Exception as e:
         print(f"❌ Could not create Root Unity Agent. Error: {e}")
