@@ -20,6 +20,8 @@ GOOGLE_CLOUD_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
 # Define the model for agents
 MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way to reference it
 
+global_orchestrator_instance = None  # type: UnityAutomationOrchestrator | None
+
 # --- Agent Definitions ---
 class UnityAutomationOrchestrator(Agent):
     """
@@ -51,6 +53,10 @@ class UnityAutomationOrchestrator(Agent):
         """
         Initializes the UnityAutomationOrchestrator.
         """
+
+        global global_orchestrator_instance
+        global_orchestrator_instance = self
+        
         # Initialize the complex objects that Pydantic can't construct directly
         # or which have a specific initial state (e.g., empty queue, unset event).
         # These are then passed to super().__init__ as kwargs so Pydantic assigns them.
@@ -63,16 +69,16 @@ class UnityAutomationOrchestrator(Agent):
         atexit.register(self.shutdown)
 
         # Wrapper for get_build_status.
-        def get_build_status_tool(build_id: Optional[str] = None) -> dict:
+        def get_build_status_tool(requestedCommit: Optional[str] = None) -> dict:
             """
             Retrieves the most recent build status. Ex: 'nobuild', 'success', 'failed'.
-            Does not take in a build id or report one. If the user says they'd like to wait, 
-            say Sounds good. Let me know when you'd like to check the build status again.
+            
             Args:
+                requestedCommit: optional, to ask for a certain commit's status
             Returns:
                 dict: A dictionary containing the status of the requested build(s).
             """
-            return self.get_build_status(build_id=build_id)
+            return self.get_build_status(requestedCommit==requestedCommit)
         
         # Wrapper for get_asset_signed_url, imported from build orchestration agent
         def get_asset_signed_url_tool(branch: str, commit: str,) -> str:
@@ -132,12 +138,12 @@ class UnityAutomationOrchestrator(Agent):
         self.start_external_listener_subprocess()
         print(f"UnityAutomationOrchestrator initialized with name: {self.name}")
  
-    def get_build_status(self, build_id: Optional[str] = None) -> Dict[str, Any]:
+    def get_build_status(self, requestedCommit: Optional[str] = None) -> Dict[str, Any]:
         """
-        Retrieves the most recent build status. Ex: 'nobuild', 'success', 'failed'.
-        Does not take in a build id or report one. 
+        Retrieves the build status. Ex: 'nobuild', 'success', 'failed'.
 
         Args:
+            requestedCommit: the user can optionally request the build status of a specific commit
         Returns:
             dict: A dictionary containing the status of the requested build(s).
         """
@@ -185,25 +191,20 @@ class UnityAutomationOrchestrator(Agent):
             print("No new build status updates were pending in the queue.")
 
         # --- Step 2: Retrieve status from the (now updated) current_build_statuses dictionary ---
-        if build_id:
-            status_info = self.current_build_statuses.get(build_id)
+        if requestedCommit:
+            status_info = self.current_build_statuses.get(requestedCommit)
             if status_info:
                 return {
-                    "build_id": build_id,
                     "status": status_info.get('status', 'unknown'),
-                    "gcs_path": status_info.get('gcs_path', 'N/A'),
-                    "timestamp": status_info.get('timestamp', 'N/A')
                 }
             # If no build_id is found after processing updates
-            return {"build_id": build_id, "status": "not_found", "message": f"Build '{build_id}' status not found or not yet processed."}
+            return {"requestedCommit": requestedCommit, "status": "not_found", "message": f"Build for commit '{requestedCommit}' status not found or not yet processed."}
         
-        # If no build_id was provided, return all known statuses
         if not self.current_build_statuses:
             return {"message": "No build status information available."}
         
-        # Return a copy to prevent external modification
+        # If no commit was provided, return all known statuses
         return {"all_build_statuses": self.current_build_statuses.copy()}
-        
 
 
     def start_external_listener_subprocess(self):
@@ -371,7 +372,7 @@ print(f"✅ Agent '{version_control_agent.name}' created.")
 root_agent = None
 agent = root_agent # needs a duplicate variable for pytest 
 # Ensure build_orchestration_agent was created successfully
-if build_orchestration_agent:
+if build_orchestration_agent and version_control_agent:
     try:
         # Instantiate your custom root agent class, passing all necessary arguments
         root_agent = UnityAutomationOrchestrator(
@@ -411,6 +412,7 @@ if build_orchestration_agent:
             sub_agents=[build_orchestration_agent, version_control_agent], # Pass your sub-agent instance here
         )
         agent = root_agent # needs a duplicate variable for pytest. don't worry about it
+        
         print(f"✅ Root Agent '{root_agent.name}' created.")
     except Exception as e:
         print(f"❌ Could not create Root Unity Agent. Error: {e}")
