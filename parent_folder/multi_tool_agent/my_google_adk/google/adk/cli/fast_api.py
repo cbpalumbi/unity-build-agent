@@ -27,13 +27,14 @@ from typing import Literal
 from typing import Optional
 
 import click
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocket
 from fastapi.websockets import WebSocketDisconnect
@@ -281,6 +282,49 @@ def get_fast_api_app(
   async def get_build_statuses():
     runner = await _get_runner_async("multi_tool_agent")
     return JSONResponse(content=runner.agent.current_build_statuses.copy())
+
+  @app.get("/api/upload", response_class=HTMLResponse)
+  async def upload_asset_page(request: Request):
+      session_id = request.query_params.get("session_id")
+      signed_url = request.query_params.get("signed_url")
+      gcs_path = request.query_params.get("gcs_path")
+
+      html = f"""
+        <!DOCTYPE html>
+        <html>
+          <head><title>Upload Asset</title></head>
+          <body>
+            <h2>Upload your .glb file</h2>
+            <input type="file" id="fileInput" accept=".glb" />
+            <button onclick="upload()">Upload</button>
+            <p id="status"></p>
+            <script>
+              function upload() {{
+                const file = document.getElementById('fileInput').files[0];
+                if (!file) {{
+                  alert('Please select a file');
+                  return;
+                }}
+                document.getElementById('status').textContent = "Uploading...";
+                fetch("{signed_url}", {{
+                  method: "PUT",
+                  headers: {{
+                    "Content-Type": "application/octet-stream"
+                  }},
+                  body: file
+                }}).then(res => {{
+                  document.getElementById('status').textContent =
+                    res.ok ? "Upload successful! You can close this tab." : "Upload failed: " + res.status;
+                }}).catch(err => {{
+                  document.getElementById('status').textContent = "Upload failed: " + err;
+                }});
+              }}
+            </script>
+          </body>
+        </html>
+        """
+      return HTMLResponse(content=html)
+
 
   @app.get("/list-apps")
   def list_apps() -> list[str]:
