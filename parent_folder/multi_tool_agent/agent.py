@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 from .version_control_agent import VERSION_CONTROL_TOOL_FUNCTIONS
 from .build_orchestration_agent import BUILD_AGENT_TOOL_FUNCTIONS, generate_signed_url_for_build
+from .asset_preview_agent import ASSET_AGENT_TOOL_FUNCTIONS
 
 load_dotenv() # Load environment variables from .env file
 
@@ -363,6 +364,35 @@ version_control_agent = Agent(
 )
 print(f"✅ Agent '{version_control_agent.name}' created.")
 
+# Asset Preview Agent
+asset_preview_agent = Agent(
+    model=MODEL_GEMINI_2_0_FLASH,
+    name="AssetPreviewAgent",
+    instruction=(
+        "You are the assistant for previewing custom game assets in Unity without requiring a full rebuild.\n\n"
+        "When a user asks to preview a model or try an asset in the game, follow this structured flow:\n\n"
+        "1. **Check for existing game build**:\n"
+        "- Ask: 'Do you already have the downloaded build .exe, or would you like to create a build first?'\n"
+        "- If the user says no or is not sure, hand off to the BuildOrchestrationAgent or prompt them to build the game first.\n\n"
+        "2. **Prompt asset upload**:\n"
+        "- If the user confirms they have the build, ask if they have a .glb (only .glb) model ready.\n"
+        "- Generate a secure upload link using the `generate_upload_url` tool.\n"
+        "- Instruct the user to upload the file using the provided link and name it using this format: `<session_id>-<assetname>`.\n"
+        "- Wait for the user to confirm the upload is complete.\n\n"
+        "3. **Trigger Asset Bundle Build**:\n"
+        "- Once confirmed, inform the user that you're initiating a small asset bundle build.\n"
+        "- Use the `publish_assetbundle_request` tool with their session ID and asset name.\n"
+        "- Let the user know the build usually takes 1 to 3 minutes and that they can check the notification window for status.\n\n"
+        "4. **Signed URL Delivery**:\n"
+        "- If the user later asks to download their asset, use `generate_signed_url_for_assetbundle` to get a URL.\n"
+        "- Return the signed URL with instructions: 'To preview this asset in the game, place the .assetbundle file in the same folder as your .exe. If multiple bundles are present, only the first will be loaded.'\n\n"
+        "Keep the interaction friendly, clear, and lightweight. Always assume the user may not be a developer and may need brief guidance."
+    ),
+    description="Helps users preview custom game assets by uploading .glb files, triggering Unity asset bundle builds, and delivering download links.",
+    tools=ASSET_AGENT_TOOL_FUNCTIONS
+)
+
+
 # --- Root Unity Automation Orchestrator Agent ---
 root_agent = None
 agent = root_agent # needs a duplicate variable for pytest 
@@ -386,11 +416,14 @@ if build_orchestration_agent and version_control_agent:
 
                 "You have the following sub-agents:\n"
                 "1. **BuildOrchestrationAgent**: Handles triggering new remote Unity builds via Pub/Sub.\n"
-                "   - This agent **CANNOT check build status**, generate signed URLs, or answer questions about existing builds.\n"
+                "   - This agent **CANNOT check build status**, or answer questions about existing builds.\n"
                 "   - If the user asks to build the game, clearly and precisely delegate to the BuildOrchestrationAgent.\n\n"
 
                 "2. **VersionControlAgent**: Handles resolving ambiguous or natural language references to branches and commits.\n"
                 "   - If a user requests a build but doesn’t specify both a branch and a commit, delegate to this agent first.\n\n"
+
+                "3. **AssetPreviewAgent**: Handles guiding the user through generating assetbundles to preview their assets in the game."
+                "   - If a user requests to preview an asset, or see their asset or art in the game, delegate to this agent."
 
                 "You must handle build status questions directly."
                 "- If the user asks about build statuses with phrases like:"
@@ -406,7 +439,7 @@ if build_orchestration_agent and version_control_agent:
                 "If a request doesn’t fall into these categories, explain that you cannot handle it.\n\n"
             ),
             tools=[], # Leave this empty because the stateful tools are added manually on init
-            sub_agents=[build_orchestration_agent, version_control_agent], # Pass your sub-agent instance here
+            sub_agents=[build_orchestration_agent, version_control_agent, asset_preview_agent], # Pass your sub-agent instance here
         )
         agent = root_agent # needs a duplicate variable for pytest. don't worry about it
 
