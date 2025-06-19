@@ -383,7 +383,7 @@ asset_preview_agent = Agent(
         "   - Ask the user to notify you once the upload is complete. Do not trigger the build until you know the glb was uploaded.\n\n"
         "4. Trigger the asset bundle build:\n"
         "   - Once the user confirms upload completion, inform them that you will now start building a small asset bundle.\n"
-        "   - Use the `publish_assetbundle_request` tool, passing in their session ID and asset details.\n"
+        "   - Use the `publish_assetbundle_request` tool, passing in their session id.\n"
         "   - Let the user know this build usually takes 1 to 3 minutes, and they can monitor progress via the notification window.\n\n"
         "5. Deliver the signed download URL:\n"
         "   - If the user later requests to download their asset, call the `generate_signed_url_for_assetbundle` tool to obtain a signed URL.\n"

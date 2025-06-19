@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 from urllib.parse import quote, quote_plus
 from google.cloud import pubsub_v1, storage
 from google.adk.tools import ToolContext, FunctionTool
-from google.genai.types import Part
 
 load_dotenv()
 
@@ -27,7 +26,6 @@ def get_session_id(tool_context: ToolContext):
 get_session_id_tool = FunctionTool(func=get_session_id)
 
 def publish_asset_build_request(
-    command: str,
     session_id: str
 ) -> dict:
     """Publishes an asset build request message to the Google Cloud Pub/Sub topic.
@@ -54,7 +52,7 @@ def publish_asset_build_request(
     # Create structured message payload
     message_data = {
         "build_id": build_id,
-        "command": command,  # should be "asset-build"
+        "command": "asset-build", 
         "gcs_asset_location_url": gcs_asset_location_url,
         "request_timestamp": datetime.now().isoformat(),
         "session_id": session_id  

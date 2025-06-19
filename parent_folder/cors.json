@@ -1,0 +1,12 @@
+[
+    {
+      "origin": [
+      "http://localhost:8000",
+      "https://adk-unity-service-106481734717.us-central1.run.app"
+      ],
+      "method": ["PUT", "POST", "GET", "OPTIONS"],
+      "responseHeader": ["Content-Type"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+  
