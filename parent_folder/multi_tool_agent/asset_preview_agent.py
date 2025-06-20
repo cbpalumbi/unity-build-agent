@@ -120,7 +120,6 @@ def generate_upload_url(session_id: str) -> str:
     if RUNNING_IN_TERMINAL:
         # Terminal mode: skip web form, upload dummy file automatically and return dummy str
         path = upload_dummy_glb_and_get_signed_url(session_id)
-        #Part.from_text(text="Terminal mode: uploading dummy GLB...")
         return path
 
     signed_url, filename = generate_signed_put_url(session_id)
@@ -133,49 +132,40 @@ def generate_upload_url(session_id: str) -> str:
     return upload_url
 
 
-# def _get_build_object_path(branch: str, commit: str) -> str:
-#     """Constructs the expected GCS object path for a Unity build artifact
-#     following the scheme: game-builds/universal/<branch>/<commit>/<commit>.zip
-#     """
-#     # The file name is the commit hash followed by .zip
-#     file_name = f"{commit}.zip"
-#     return f"game-builds/universal/{branch}/{commit}/{file_name}"
 
-# def generate_signed_url_for_build(branch: str, commit: str, expiration_minutes: int = 60) -> str:
-#     """Generates a signed URL for a specific Unity build artifact in GCS.
-#     Use this tool when a user asks for a download link for a cached build,
-#     providing the branch and commit hash.
+def generate_signed_url_for_bundle(session_id: str, expiration_minutes: int = 60) -> str:
+    """Generates a signed URL for a specific Unity build artifact in GCS.
+    Use this tool when a user asks for a download link for a cached build,
+    providing the session id, which is the key for the asset bundle status dict.
 
-#     Args:
-#         branch: The Git branch name for the build (e.g., "main").
-#         commit: The Git commit hash for the build.
-#         expiration_minutes: How long the signed URL should be valid for (in minutes). Defaults to 60.
-#     Returns:
-#         str: The signed URL, or an error message if generation fails.
-#     """
-#     if not GCS_BUILD_BUCKET_NAME:
-#         return "Error: GCS_BUILD_BUCKET_NAME environment variable not set. Cannot generate URL."
+    Args:
+        session_id: current session_id
+        expiration_minutes: How long the signed URL should be valid for (in minutes). Defaults to 60.
+    Returns:
+        str: The signed URL, or an error message if generation fails.
+    """
+    if not GCS_BUILD_BUCKET_NAME:
+        return "Error: GCS_BUILD_BUCKET_NAME environment variable not set. Cannot generate URL."
 
-#     print(f"[GCS Tool] Generating signed URL for build on {branch}/{commit}...")
-#     try:
-#         bucket = storage_client.bucket(GCS_BUILD_BUCKET_NAME)
-#         # Use the helper to construct the full blob path
-#         blob_name = _get_build_object_path(branch, commit)
-#         blob = bucket.blob(blob_name)
+    print(f"[GCS Tool] Generating signed URL for asset for session {session_id}...")
+    try:
+        bucket = storage_client.bucket(GCS_BUILD_BUCKET_NAME)
+        blob_name = f"game-builds/assets/{session_id}/assets.zip"
+        blob = bucket.blob(blob_name)
 
-#         if not blob.exists():
-#             return f"Error: Build artifact '{blob_name}' not found in cache. Cannot generate URL."
+        if not blob.exists():
+            return f"Error: Build artifact '{blob_name}' not found in cache. Cannot generate URL."
 
-#         expiration_time = datetime.now(tz=timezone.utc) + timedelta(minutes=expiration_minutes)
-#         url = blob.generate_signed_url(expiration=expiration_time)
-#         print(f"[GCS Tool] Generated signed URL (valid for {expiration_minutes} min): {url}")
-#         return url
-#     except Exception as e:
-#         return f"Error generating signed URL: {e}"
+        expiration_time = datetime.now(tz=timezone.utc) + timedelta(minutes=expiration_minutes)
+        url = blob.generate_signed_url(expiration=expiration_time)
+        print(f"[GCS Tool] Generated signed URL (valid for {expiration_minutes} min): {url}")
+        return url
+    except Exception as e:
+        print(f"Error generated signed asset bundle url: {e}")
     
 ASSET_AGENT_TOOL_FUNCTIONS = [
     publish_asset_build_request,
     get_session_id_tool,
-    generate_upload_url
-    #generate_signed_url_for_build,
+    generate_upload_url,
+    generate_signed_url_for_bundle
 ]

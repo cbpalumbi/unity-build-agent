@@ -395,7 +395,7 @@ asset_preview_agent = Agent(
         "   - Let the user know this build usually takes 1 to 3 minutes, and they will see a notification on the left when \n\n"
         "       the asset bundle build is done. Say that they can let you know when the build is done and you can generate a download link."
         "5. Deliver the signed download URL:\n"
-        "   - If the user later requests to download their asset, call the `generate_signed_url_for_assetbundle` tool to obtain a signed URL.\n"
+        "   - If the user later requests to download their asset, call the `generate_signed_url_for_bundle` tool to obtain a signed URL.\n"
         "   - Provide this signed URL with the instruction: 'To preview your asset in the game, unzip the folder and place all the contents"
         "     in a folder called MyAssetBundles in the same location as your .exe (executable). The folder must be named MyAssetBundles"
         "      If multiple bundles exist, only the first one will be loaded.'\n\n"
@@ -406,12 +406,11 @@ asset_preview_agent = Agent(
 )
 print(f"✅ Agent '{asset_preview_agent.name}' created.")
 
-
 # --- Root Unity Automation Orchestrator Agent ---
 root_agent = None
 agent = root_agent # needs a duplicate variable for pytest 
 # Ensure build_orchestration_agent was created successfully
-if build_orchestration_agent and version_control_agent:
+if build_orchestration_agent and version_control_agent and asset_preview_agent:
     try:
         # Instantiate your custom root agent class, passing all necessary arguments
         root_agent = UnityAutomationOrchestrator(
@@ -462,5 +461,5 @@ if build_orchestration_agent and version_control_agent:
         print(f"❌ Could not create Root Unity Agent. Error: {e}")
     
 else:
-    print("❌ Cannot create Root Unity Agent because the BuildOrchestrationAgent failed to initialize.")
+    print("❌ Cannot create Root Unity Agent because one or more subagents failed to start")
 
