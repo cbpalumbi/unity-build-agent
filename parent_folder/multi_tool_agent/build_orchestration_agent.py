@@ -27,7 +27,7 @@ def publish_build_request(
     It does not report build or request ids to the user.
 
     Args:
-        command (str): The primary command for the VM (e.g., "start_build", "checkout_and_build").
+        command (str): The primary command for the VM (e.g., "start_build").
         branch_name (str): The Git branch name to build from.
         commit_hash (str): The specific Git commit hash (full SHA preferred).
         is_test_build (bool): If True, indicates a test build (no actual Unity build).

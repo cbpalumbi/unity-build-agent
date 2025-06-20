@@ -35,7 +35,8 @@ class UnityAutomationOrchestrator(Agent):
     _stop_event: threading.Event # Signal for graceful thread shutdown
     
     build_status_queue: queue.Queue # Queue for raw JSON from subprocess stdout
-    current_build_statuses: Dict[str, Dict[str, Any]] # Use commit hash as the primary key
+    current_build_statuses: Dict[str, Dict[str, Any]] # Use commit hash as the primary key for caching purposes
+    current_asset_bundle_statuses: Dict[str, Dict[str, Any]] # Use session id as the primary key
 
     # Needed for pydantic to not complain
     model_config = {"arbitrary_types_allowed": True}
@@ -61,6 +62,7 @@ class UnityAutomationOrchestrator(Agent):
         # These are then passed to super().__init__ as kwargs so Pydantic assigns them.
         initial_build_status_queue = queue.Queue()
         initial_current_build_statuses = {}
+        initial_current_asset_bundle_statuses = {}
 
         if tools is None: tools = []
 
@@ -122,6 +124,7 @@ class UnityAutomationOrchestrator(Agent):
             before_model_callback=bound_callback_for_adk,
             build_status_queue=initial_build_status_queue,
             current_build_statuses=initial_current_build_statuses,
+            current_asset_bundle_statuses=initial_current_asset_bundle_statuses,
             **kwargs # Pass any remaining kwargs
         )
 
@@ -253,12 +256,17 @@ class UnityAutomationOrchestrator(Agent):
                         try:
                             notification = json.loads(line) # TODO: verify type etc
                             commit_hash = notification.get('commit')
+                            session_id = notification.get('session_id')
                             if commit_hash:
-                                # Update the orchestrator's internal dictionary with the latest status
+                                # Update the orchestrator's internal build status dictionary with the latest status
                                 self.current_build_statuses[commit_hash] = notification
                                 print(f"  Processed update for commit: {commit_hash}, Status: {notification.get('status', 'N/A')}")
+                            elif session_id:
+                                # Update asset bundle status instead
+                                self.current_asset_bundle_statuses[session_id] = notification
+                                print(f"  Processed update for asset bundle for session: {session_id}, Status: {notification.get('status', 'N/A')}")
                             else:
-                                print("Build status notif is missing commit hash")
+                                print("Build status notif has neither commit hash nor session id")
 
                         except json.JSONDecodeError as e:
                             print(f"Failed to decode JSON from listener stdout: {line} - Error: {e}")
@@ -384,10 +392,13 @@ asset_preview_agent = Agent(
         "4. Trigger the asset bundle build:\n"
         "   - Once the user confirms upload completion, inform them that you will now start building a small asset bundle.\n"
         "   - Use the `publish_assetbundle_request` tool, passing in their session id.\n"
-        "   - Let the user know this build usually takes 1 to 3 minutes, and they can monitor progress via the notification window.\n\n"
+        "   - Let the user know this build usually takes 1 to 3 minutes, and they will see a notification on the left when \n\n"
+        "       the asset bundle build is done. Say that they can let you know when the build is done and you can generate a download link."
         "5. Deliver the signed download URL:\n"
         "   - If the user later requests to download their asset, call the `generate_signed_url_for_assetbundle` tool to obtain a signed URL.\n"
-        "   - Provide this signed URL with the instruction: 'To preview your asset in the game, place the .assetbundle file in the same folder as your game executable (.exe). If multiple bundles exist, only the first one will be loaded.'\n\n"
+        "   - Provide this signed URL with the instruction: 'To preview your asset in the game, unzip the folder and place all the contents"
+        "     in a folder called MyAssetBundles in the same location as your .exe (executable). The folder must be named MyAssetBundles"
+        "      If multiple bundles exist, only the first one will be loaded.'\n\n"
         "Always maintain a friendly, clear, and approachable tone. Assume the user might not be a developer, so offer brief, easy-to-understand guidance throughout the conversation."
     ),
     description="Helps users preview custom game assets by uploading .glb files, triggering Unity asset bundle builds, and delivering download links.",

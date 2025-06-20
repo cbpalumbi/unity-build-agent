@@ -55,9 +55,36 @@
     }
   }
 
+  async function fetchAssetBundleStatuses() {
+    try {
+      const res = await fetch('/api/asset-bundle-statuses');
+      if (!res.ok) throw new Error('Failed to fetch asset bundle statuses');
+      const data = await res.json();
+      const container = document.getElementById('custom-asset-bundle-status');
+      container.innerHTML = '';
+      console.log("data", data)
+      for (const [sessionId, info] of Object.entries(data)) {
+        const div = document.createElement('div');
+        div.innerHTML = `
+          <b>${sessionId}</b> — ${info.status} <br/>
+          <small>${new Date(info.timestamp).toLocaleString()}</small><br/>
+          <hr/>
+        `;
+        container.appendChild(div);
+      }
+    } catch (err) {
+      console.error('Error fetching asset bundle statuses:', err);
+    }
+  }
+
+  function fetchStatuses() {
+    fetchBuildStatuses();
+    fetchAssetBundleStatuses();
+  }
+
   window.onload = () => {
-    fetchBuildStatuses();            // fetch immediately on page load
-    setInterval(fetchBuildStatuses, 5000);  // poll every 5 seconds
+    fetchStatuses(); // fetch on first page load 
+    setInterval(fetchStatuses, 5000);  // poll every 5 seconds
   };
 </script>
 
@@ -81,6 +108,23 @@
     target.insertBefore(myDiv, target.firstChild);
   }
 
+  function injectAssetBundleStatus(target) {
+    if (!target || target.querySelector('#custom-asset-bundle-status')) return;
+
+    const myDiv = document.createElement('div');
+    myDiv.id = 'custom-asset-bundle-status';
+    myDiv.style.padding = '10px';
+    myDiv.style.backgroundColor = '#e3f2fd';
+    myDiv.style.border = '1px solid #90caf9';
+    myDiv.style.margin = '10px';
+    myDiv.style.borderRadius = '8px';
+    myDiv.style.color = 'black';
+    myDiv.style.fontWeight = 'bold';
+    myDiv.innerText = 'Asset Bundle Statuses:';
+
+    target.insertBefore(myDiv, target.firstChild);
+  }
+
   function watchForDrawer() {
     const root = document.body;
 
@@ -88,6 +132,7 @@
       const drawer = document.querySelector('.tabs-container');
       if (drawer) {
         injectBuildStatus(drawer);
+        injectAssetBundleStatus(drawer);
       }
     });
 
@@ -100,6 +145,7 @@
     const maybeDrawer = document.querySelector('.mat-drawer-inner-container');
     if (maybeDrawer) {
       injectBuildStatus(maybeDrawer);
+      injectAssetBundleStatus(drawer);
     }
   }
 

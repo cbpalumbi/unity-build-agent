@@ -278,6 +278,11 @@ def get_fast_api_app(
   # initialize Agent Loader
   agent_loader = AgentLoader(agents_dir)
 
+  @app.get("/api/asset-bundle-statuses")
+  async def get_asset_bundle_statuses():
+    runner = await _get_runner_async("multi_tool_agent")
+    return JSONResponse(content=runner.agent.current_asset_bundle_statuses.copy())
+
   @app.get("/api/build-statuses")
   async def get_build_statuses():
     runner = await _get_runner_async("multi_tool_agent")
