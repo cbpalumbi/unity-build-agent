@@ -16,13 +16,10 @@ from .asset_preview_agent import ASSET_AGENT_TOOL_FUNCTIONS
 load_dotenv() # Load environment variables from .env file
 
 # --- Configuration for Google Cloud ---
-# IMPORTANT: Replace with your actual Project ID and Topic ID
 GOOGLE_CLOUD_PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-
 # Define the model for agents
-MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash" # Assuming this is the correct way to reference it
+MODEL_GEMINI_2_0_FLASH = "gemini-2.0-flash"
 
-# --- Agent Definitions ---
 class UnityAutomationOrchestrator(Agent):
     """
     The central agent for Unity game development automation.
@@ -49,22 +46,16 @@ class UnityAutomationOrchestrator(Agent):
         instruction: str,
         sub_agents: list,
         tools: Optional[list] = None,
-        **kwargs, # Accept any other kwargs that Pydantic might inject or we want to pass
+        **kwargs, 
     ):
         """
         Initializes the UnityAutomationOrchestrator.
         """
-
-        print(f"Orchestrator ID: {id(self)}")  # in tool
-        
-        # Initialize the complex objects that Pydantic can't construct directly
-        # or which have a specific initial state (e.g., empty queue, unset event).
+        # Initialize the complex objects that Pydantic can't construct directly.
         # These are then passed to super().__init__ as kwargs so Pydantic assigns them.
         initial_build_status_queue = queue.Queue()
         initial_current_build_statuses = {}
         initial_current_asset_bundle_statuses = {}
-
-        if tools is None: tools = []
 
         # Register the shutdown method here when the orchestrator is created
         atexit.register(self.shutdown)
@@ -96,21 +87,11 @@ class UnityAutomationOrchestrator(Agent):
             return generate_signed_url_for_build(branch, commit)
 
         
-        # Append this *callable* to the tools list
-        # If your ADK expects a list of tool *functions*, then pass this directly.
-        # If it expects a specific Tool object, you'd instantiate that.
-        # Assuming `tools` passed to __init__ is where you register them:
+        # Set tools up in the init
         if tools is None:
             tools = []
         tools.append(get_build_status_tool) # Add the wrapped function here
         tools.append(get_asset_signed_url_tool)
-
-        # --- CRITICAL FIX FOR _before_agent_callback ---
-        # Create a lambda that captures the 'self' of *this* Orchestrator instance.
-        # When the ADK calls this lambda, the lambda in turn calls the
-        # actual instance method self._before_agent_callback,
-        # thereby correctly passing 'self' to it.
-        bound_callback_for_adk = lambda **cb_kwargs: self._before_agent_callback(**cb_kwargs)
 
         # Pass all arguments, including your custom internal state, to the base Agent constructor.
         # Pydantic will handle the assignment to the declared fields.
@@ -121,7 +102,6 @@ class UnityAutomationOrchestrator(Agent):
             instruction=instruction,
             tools=tools,
             sub_agents=sub_agents,
-            before_model_callback=bound_callback_for_adk,
             build_status_queue=initial_build_status_queue,
             current_build_statuses=initial_current_build_statuses,
             current_asset_bundle_statuses=initial_current_asset_bundle_statuses,
@@ -132,13 +112,6 @@ class UnityAutomationOrchestrator(Agent):
         # after the super().__init__ call has completed.
         # These are instance attributes that are not passed to the Pydantic base model's __init__.
         self._stop_event = threading.Event()
-        # self.listener_process = None # Already Optional[None]
-        # self.stdout_reader_thread = None # Already Optional[None]
-        # self.listener_stderr_file_handle = None # Already Optional[None]
-
-        # Now that Pydantic has initialized the fields, you can access them.
-        # Launch background services AFTER the agent instance is fully initialized
-        # and its Pydantic fields are set.
         self.start_external_listener_subprocess()
         print(f"UnityAutomationOrchestrator initialized with name: {self.name}")
  
@@ -195,8 +168,7 @@ class UnityAutomationOrchestrator(Agent):
         listener_script_path = os.path.join(os.path.dirname(__file__), 'listener.py')
         
         try:
-            # Open stderr to a file for debugging, or you can use subprocess.PIPE
-            # if you want to read stderr in another thread/way.
+            # Open stderr to a file for debugging
             self.listener_stderr_file_handle = open("listener_stderr.log", "a")
             
             self.listener_process = subprocess.Popen(
@@ -230,8 +202,9 @@ class UnityAutomationOrchestrator(Agent):
         and places them into self.build_status_queue. This runs in a separate thread.
         """
 
+        # example incoming message. for a build completion message
         # $completionPayload = @{
-        #         session_id = "placeholder"
+        #         session_id = "123..."
         #         commit = $commitHash
         #         branch = $branchName
         #         status = "success"
@@ -408,10 +381,10 @@ print(f"✅ Agent '{asset_preview_agent.name}' created.")
 # --- Root Unity Automation Orchestrator Agent ---
 root_agent = None
 agent = root_agent # needs a duplicate variable for pytest 
-# Ensure build_orchestration_agent was created successfully
+# Ensure subagents were created successfully
 if build_orchestration_agent and version_control_agent and asset_preview_agent:
     try:
-        # Instantiate your custom root agent class, passing all necessary arguments
+        # Instantiate custom root agent class, passing all necessary arguments
         root_agent = UnityAutomationOrchestrator(
             name="UnityAutomationOrchestrator",
             model=MODEL_GEMINI_2_0_FLASH,
