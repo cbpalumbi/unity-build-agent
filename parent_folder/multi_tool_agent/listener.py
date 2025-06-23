@@ -8,10 +8,9 @@ import sys # Import sys to explicitly write to stdout and stderr
 from google.cloud import pubsub_v1
 
 # --- Configuration Variables ---
-# IMPORTANT: This must match the project ID where your Pub/Sub topic and subscription are.
-# It's best practice to read this from environment variables.
-GOOGLE_CLOUD_PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT_ID", "cool-ruler-461702-p8") # <-- REPLACE or set env var
-UNITY_BUILD_COMPLETION_TOPIC_ID = "unity-build-completion-topic" # <-- Make sure this matches your VM's topic
+
+GOOGLE_CLOUD_PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT_ID") 
+UNITY_BUILD_COMPLETION_TOPIC_ID = "unity-build-completion-topic" 
 APP_NAME = "unity_build_orchestrator" # Used for consistent subscription naming, same as agent.py
 
 # --- Basic Pub/Sub Listener for Build Completions ---
