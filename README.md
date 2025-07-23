@@ -6,7 +6,7 @@ Built with the Google Agent Development Kit (ADK) for the 2025 Google ADK Hackat
 
 ---
 
-## 🌟 Overview
+## Overview
 
 **DevFlow.ai** is an AI-powered multi-agent orchestration system for Unity development, enabling developers and artists to trigger complex tasks—like builds, asset previews, and Git operations via simple natural language prompts. Lets game developers easily play any version of the game they want without the need for local builds or repository management. Also supports a speedy asset bundle pipeline for testing new models in game, not just a preview - truly running in the game.  
 
@@ -17,17 +17,12 @@ Whether you're a designer, gameplay engineer, or technical artist, DevFlow.ai ab
 
 ---
 
-## Demo Video
-📽️ Check out a walkthrough here: https://www.youtube.com/watch?v=frQN-aOUpBk
+## 📽️ Demo Video
+Check out a walkthrough here: https://www.youtube.com/watch?v=frQN-aOUpBk
 
 ---
 
-## Explore the Code
-Main agent file is multi_tool_agent/agent.py. The repo also includes a local copy of the google-adk repo so I could modify the built-in web interface to add UI for build notifications. 
-
----
-
-## 🔧 How It Works
+## How It Works
 
 ###  Multi-Agent AI System (Python + ADK)
 - **Root Agent (Unity Orchestrator)** interprets natural language and delegates to:
@@ -53,7 +48,7 @@ Main agent file is multi_tool_agent/agent.py. The repo also includes a local cop
 
 ---
 
-## 🧪 Challenges & Engineering Wins
+## Challenges & Engineering Wins
 
 -  **Unity Cloud Licensing**: Solved Unity headless builds on Windows VM
 -  **Robust Windows Service**: Built resilient message handling for long-running job queue
@@ -63,18 +58,17 @@ Main agent file is multi_tool_agent/agent.py. The repo also includes a local cop
 -  **ADK Web Frontend Hackery**: Patched internal ADK web files to add custom status panels
 \---
 
-## Architecture Diagram
-
+## Architecture Diagram 
+![alt text](https://github.com/cbpalumbi/unity-build-agent/blob/main/arch%20diagram%203.PNG)
 ---
 
 
-## 🤝 Credits
+## Credits
 
 Developed by Christabella Palumbi  
-Built for the [Google Agent Development Kit Hackathon 2025](https://developers.google.com/agent-hackathon)  
 
 ---
 
-## 📜 License
+## License
 
-MIT License — feel free to fork, remix, and build on top!
+MIT License - feel free to fork, remix, and build on top!
