@@ -1,5 +1,5 @@
 
-# DevFlow.ai 🧠🎮
+# DevFlow.ai 
 
 **Natural Language-Powered Unity Build Automation**  
 Built with the Google Agent Development Kit (ADK) for the 2025 Google ADK Hackathon
@@ -17,7 +17,7 @@ Whether you're a designer, gameplay engineer, or technical artist, DevFlow.ai ab
 
 ---
 
-## 📽️ Demo Video
+##  Demo Video
 Check out a walkthrough here: https://www.youtube.com/watch?v=frQN-aOUpBk
 
 ---
