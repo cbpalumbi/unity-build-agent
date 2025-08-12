@@ -48,24 +48,8 @@ Check out a walkthrough here: https://www.youtube.com/watch?v=frQN-aOUpBk
 
 ---
 
-## Challenges & Engineering Wins
-
--  **Unity Cloud Licensing**: Solved Unity headless builds on Windows VM
--  **Robust Windows Service**: Built resilient message handling for long-running job queue
--  **Natural Language Precision**: Translated vague queries into structured Git + build instructions
--  **Signed URL Caching**: Enabled repeat builds to skip compilation and serve immediately
--  **Asset Streaming Pipeline**: Let artists preview `.glb` files without touching Unity locally
--  **ADK Web Frontend Hackery**: Patched internal ADK web files to add custom status panels
-\---
-
 ## Architecture Diagram 
 ![alt text](https://github.com/cbpalumbi/unity-build-agent/blob/main/arch%20diagram%203.PNG)
----
-
-
-## Credits
-
-Developed by Christabella Palumbi  
 
 ---
 
